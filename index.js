@@ -110,3 +110,11 @@ EJEMPLOS DE ESTILO:
     });
   }
 });
+// ===============================
+// Servidor HTTP (necesario para Render)
+// ===============================
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor del chatbot activo en el puerto ${PORT}`);
+});
