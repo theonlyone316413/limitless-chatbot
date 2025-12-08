@@ -1,3 +1,23 @@
+import 'dotenv/config';
+import express from 'express';
+import OpenAI from 'openai';
+
+// Inicializar Express
+const app = express();
+app.use(express.json());
+
+// Inicializar cliente de OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Puerto para Render / local
+const PORT = process.env.PORT || 3000;
+
+// Ruta simple para probar que el servidor está vivo
+app.get('/', (req, res) => {
+  res.send('Chatbot de Limitless está activo 🔥');
+});
 // Webhook principal: aquí llega el mensaje de Tidio
 app.post('/webhook', async (req, res) => {
   const userMessage = (req.body.message || '').toString().trim();
