@@ -1,108 +1,147 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import OpenAI from 'openai';
+import express from "express";
+import fetch from "node-fetch";
 
-dotenv.config();
-
-// ================================
-// Configuración básica
-// ================================
 const app = express();
 app.use(express.json());
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// =======================
+// CONFIGURACIÓN
+// =======================
+const PORT = process.env.PORT || 3000;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ================================
-// Webhook principal: aquí llega el mensaje de Tidio
-// ================================
-app.post('/webhook', async (req, res) => {
-  const userMessage = (req.body.message || '').toString().trim();
+// =======================
+// VERIFICACIÓN WEBHOOK (META)
+// =======================
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-  console.log('📩 Mensaje recibido de Tidio:', userMessage);
-
-  // Si viene vacío, mandamos un saludo básico
-  if (!userMessage) {
-    return res.json({
-      reply:
-        'Hola 👋 Soy el asistente de Limitless Design Studio. Cuéntame qué necesitas en diseño o impresión y con gusto te ayudo.',
-    });
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("✅ Webhook verificado");
+    return res.status(200).send(challenge);
   }
 
+  return res.sendStatus(403);
+});
+
+// =======================
+// RECEPCIÓN DE MENSAJES
+// =======================
+app.post("/webhook", async (req, res) => {
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.4,
-      max_tokens: 350,
-      messages: [
-        {
-          role: 'system',
-          content: `
-Eres el asistente de atención al cliente de **Limitless Design Studio** en Querétaro, México.
+    const entry = req.body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const message = value?.messages?.[0];
 
-TONO:
-- Respondes breve (2–4 líneas), claro y profesional, como si chatearas por WhatsApp.
-- Usas el mismo idioma que el cliente.
-- Eres amable, directo y orientado a ayudar y cerrar una cotización.
-- Evitas respuestas genéricas. Buscas siempre obtener detalles para cotizar.
+    if (!message) {
+      return res.sendStatus(200);
+    }
 
-SERVICIOS QUE PUEDES MENCIONAR (siempre aclara que el precio depende de diseño, tamaño, materiales y cantidades):
-- Lonas publicitarias e impresos de gran formato.
-- Playeras personalizadas (sublimación o vinil textil; NO DTF).
-- Tazas personalizadas.
-- Tarjetas de presentación y papelería básica.
-- Logotipos y branding.
-- Letreros 3D y cajas de luz.
-- Rotulación vehicular y comercial.
-- Polarizados automotrices y arquitectónicos.
+    const from = message.from; // número del cliente
+    const userMessage = message.text?.body;
 
-REGLAS PARA COTIZAR:
-- Nunca digas frases como: "no tengo información específica sobre nuestro proceso de cotización o precios".
-- En lugar de eso, explica que los precios son personalizados.
-- Pide siempre datos clave: tipo de producto, tamaño, cantidad, si ya tiene diseño, fecha requerida.
-- Cuando sea útil, ofrece continuar por WhatsApp al número **4421704583**.
+    console.log("📩 Mensaje recibido:", userMessage);
 
-EJEMPLOS DE RESPUESTA:
+    // =======================
+    // MENSAJE A OPENAI
+    // =======================
+    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.6,
+        messages: [
+          {
+            role: "system",
+            content: `
+Eres el asistente oficial de ventas de:
+"Limitless Design Studio"
+Ubicación: Querétaro, México 🇲🇽
 
-Cliente: "¿Cuánto cuesta una lona?"
-Tú: "Con gusto te cotizo. Las lonas dependen del tamaño y si ya tienes diseño o lo hacemos nosotros. ¿Qué medida necesitas y cuántas piezas serían? Si prefieres, también puedo darte un rango por WhatsApp al 4421704583."
+Estilo:
+- Profesional
+- Claro
+- Cercano
+- Orientado a cerrar ventas
 
-Cliente: "Quiero precio de playeras."
-Tú: "Claro, personalizamos playeras en sublimación o vinil textil. El precio depende de la cantidad y si ya tienes diseño. ¿Cuántas piezas necesitas y qué tipo de estampa buscas?"
+Servicios que ofreces:
+- Sublimación (playeras, tazas, termos)
+- Vinil textil y vinil adhesivo
+- Rotulación vehicular y comercial
+- Lonas, banners, espectaculares
+- Cajas de luz
+- Señalética
+- Diseño gráfico y branding
 
-Cliente: "Cotización de rotulación vehicular."
-Tú: "Perfecto, la rotulación se cotiza según el vehículo y el estilo del diseño. ¿Qué modelo de vehículo es y qué áreas deseas rotular? Puedo darte un estimado rápido."
-          `,
-        },
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
+Reglas:
+- SIEMPRE pregunta datos clave para cotizar:
+  • qué producto
+  • cantidad
+  • medidas
+  • uso (interior/exterior)
+  • ciudad
+- Da rangos de precios cuando falten datos
+- NO inventes precios exactos sin info
+- Usa español neutro mexicano
+- Sé claro y ordenado
+`
+          },
+          {
+            role: "user",
+            content: userMessage
+          }
+        ]
+      })
     });
 
-    const reply =
-      completion.choices[0]?.message?.content?.trim() ||
-      'Gracias por tu mensaje 🙌 ¿Qué necesitas en diseño o impresión: lonas, playeras, tazas, tarjetas, logos, letreros 3D o rotulación vehicular?';
+    const aiData = await aiResponse.json();
+    const reply = aiData.choices?.[0]?.message?.content;
 
-    console.log('🤖 Respuesta generada:', reply);
+    // =======================
+    // RESPONDER EN WHATSAPP
+    // =======================
+    await fetch(
+      `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to: from,
+          text: { body: reply }
+        })
+      }
+    );
 
-    return res.json({ reply });
+    console.log("✅ Respuesta enviada");
+    res.sendStatus(200);
+
   } catch (error) {
-    console.error('❌ Error en /webhook:', error);
-    return res.json({
-      reply:
-        'Tuvimos un detalle técnico un momento 😅, pero ya estoy de regreso. ¿En qué puedo ayudarte con diseño o impresión?',
-    });
+    console.error("❌ Error:", error);
+    res.sendStatus(200);
   }
 });
 
-// ================================
-// Servidor HTTP (necesario para Render)
-// ================================
-const PORT = process.env.PORT || 10000;
+// =======================
+// SERVER
+// =======================
+app.get("/", (req, res) => {
+  res.send("🚀 Limitless WhatsApp Bot activo");
+});
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor del chatbot activo en el puerto ${PORT}`);
+  console.log(`🔥 Bot corriendo en puerto ${PORT}`);
 });
