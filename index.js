@@ -1,147 +1,90 @@
 import express from "express";
-import fetch from "node-fetch";
+import OpenAI from "openai";
 
 const app = express();
 app.use(express.json());
 
-// =======================
-// CONFIGURACIÓN
-// =======================
-const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-// =======================
-// VERIFICACIÓN WEBHOOK (META)
-// =======================
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook verificado");
-    return res.status(200).send(challenge);
-  }
-
-  return res.sendStatus(403);
+// Inicializa OpenAI con la API Key desde Render
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-// =======================
-// RECEPCIÓN DE MENSAJES
-// =======================
+// ===============================
+// WEBHOOK PRINCIPAL (Tidio / WhatsApp futuro)
+// ===============================
 app.post("/webhook", async (req, res) => {
   try {
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const message = value?.messages?.[0];
+    console.log("📩 Payload recibido:", req.body);
 
-    if (!message) {
-      return res.sendStatus(200);
-    }
+    // Mensaje que envía Tidio
+    const userMessage = req.body.message || "Hola";
 
-    const from = message.from; // número del cliente
-    const userMessage = message.text?.body;
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `
+Eres el asistente virtual oficial de Limitless Design Studio en Querétaro, México.
 
-    console.log("📩 Mensaje recibido:", userMessage);
+Tu objetivo:
+- Atender clientes de forma clara, profesional y amable.
+- Ayudar con cotizaciones y servicios.
 
-    // =======================
-    // MENSAJE A OPENAI
-    // =======================
-    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.6,
-        messages: [
-          {
-            role: "system",
-            content: `
-Eres el asistente oficial de ventas de:
-"Limitless Design Studio"
-Ubicación: Querétaro, México 🇲🇽
-
-Estilo:
-- Profesional
-- Claro
-- Cercano
-- Orientado a cerrar ventas
-
-Servicios que ofreces:
-- Sublimación (playeras, tazas, termos)
-- Vinil textil y vinil adhesivo
-- Rotulación vehicular y comercial
-- Lonas, banners, espectaculares
-- Cajas de luz
-- Señalética
-- Diseño gráfico y branding
+Servicios principales:
+• Impresión digital
+• Lonas y banners
+• Playeras y textiles
+• Tazas sublimadas
+• Rotulación vehicular
+• Vinil decorativo
+• Diseño gráfico y branding
+• Marketing digital
 
 Reglas:
-- SIEMPRE pregunta datos clave para cotizar:
-  • qué producto
-  • cantidad
-  • medidas
-  • uso (interior/exterior)
-  • ciudad
-- Da rangos de precios cuando falten datos
-- NO inventes precios exactos sin info
-- Usa español neutro mexicano
-- Sé claro y ordenado
+- Responde en español.
+- Sé claro y directo.
+- Si el cliente pide cotización, pregunta SOLO lo necesario:
+  tipo de producto, medidas, cantidad y uso.
+- No inventes precios exactos si no tienes datos.
+- Mantén un tono humano y cercano.
 `
-          },
-          {
-            role: "user",
-            content: userMessage
-          }
-        ]
-      })
+        },
+        {
+          role: "user",
+          content: userMessage,
+        },
+      ],
     });
 
-    const aiData = await aiResponse.json();
-    const reply = aiData.choices?.[0]?.message?.content;
+    const reply = completion.choices[0].message.content;
 
-    // =======================
-    // RESPONDER EN WHATSAPP
-    // =======================
-    await fetch(
-      `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: from,
-          text: { body: reply }
-        })
-      }
-    );
-
-    console.log("✅ Respuesta enviada");
-    res.sendStatus(200);
+    // 🔑 RESPUESTA CLAVE PARA TIDIO
+    return res.json({
+      reply: reply,
+    });
 
   } catch (error) {
-    console.error("❌ Error:", error);
-    res.sendStatus(200);
+    console.error("❌ Error en webhook:", error);
+
+    return res.json({
+      reply:
+        "⚠️ Hubo un problema técnico, pero con gusto puedo ayudarte. ¿Qué servicio te interesa?",
+    });
   }
 });
 
-// =======================
-// SERVER
-// =======================
+// ===============================
+// RUTA RAÍZ (solo para ver que está vivo)
+// ===============================
 app.get("/", (req, res) => {
   res.send("🚀 Limitless WhatsApp Bot activo");
 });
 
+// ===============================
+// INICIAR SERVIDOR
+// ===============================
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🔥 Bot corriendo en puerto ${PORT}`);
+  console.log(`✅ Servidor activo en puerto ${PORT}`);
 });
