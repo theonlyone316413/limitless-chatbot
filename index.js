@@ -1,23 +1,31 @@
 import express from "express";
+import dotenv from "dotenv";
 import OpenAI from "openai";
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-// Inicializa OpenAI con la API Key desde Render
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY
 });
 
-// ===============================
-// WEBHOOK PRINCIPAL (Tidio / WhatsApp futuro)
-// ===============================
+// Ruta de prueba
+app.get("/", (req, res) => {
+  res.send("🚀 Limitless WhatsApp Bot activo");
+});
+
+// Webhook para Tidio / WhatsApp / futuro
 app.post("/webhook", async (req, res) => {
   try {
-    console.log("📩 Payload recibido:", req.body);
+    const userMessage = req.body.message;
 
-    // Mensaje que envía Tidio
-    const userMessage = req.body.message || "Hola";
+    if (!userMessage) {
+      return res.json({
+        reply: "¿Me puedes escribir tu consulta para ayudarte mejor? 😊"
+      });
+    }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -25,66 +33,45 @@ app.post("/webhook", async (req, res) => {
         {
           role: "system",
           content: `
-Eres el asistente virtual oficial de Limitless Design Studio en Querétaro, México.
+Eres el asistente oficial de Limitless Design Studio (Querétaro, México).
 
-Tu objetivo:
-- Atender clientes de forma clara, profesional y amable.
-- Ayudar con cotizaciones y servicios.
-
-Servicios principales:
-• Impresión digital
-• Lonas y banners
-• Playeras y textiles
-• Tazas sublimadas
-• Rotulación vehicular
-• Vinil decorativo
-• Diseño gráfico y branding
-• Marketing digital
+Servicios:
+- Lonas publicitarias
+- Rotulación vehicular
+- Vinil (corte y full color)
+- Sublimación
+- Playeras personalizadas
+- Tarjetas, volantes, etiquetas
+- Señalética y anuncios
 
 Reglas:
-- Responde en español.
-- Sé claro y directo.
-- Si el cliente pide cotización, pregunta SOLO lo necesario:
-  tipo de producto, medidas, cantidad y uso.
-- No inventes precios exactos si no tienes datos.
-- Mantén un tono humano y cercano.
+- Español claro y profesional
+- Tono amable y cercano
+- Guía al cliente paso a paso
+- Pide datos solo cuando sea necesario
 `
         },
         {
           role: "user",
-          content: userMessage,
-        },
-      ],
+          content: userMessage
+        }
+      ]
     });
 
     const reply = completion.choices[0].message.content;
 
-    // 🔑 RESPUESTA CLAVE PARA TIDIO
-    return res.json({
-      reply: reply,
-    });
+    // 🔑 ESTO ES LO QUE TIDIO NECESITA
+    res.json({ reply });
 
   } catch (error) {
-    console.error("❌ Error en webhook:", error);
-
-    return res.json({
-      reply:
-        "⚠️ Hubo un problema técnico, pero con gusto puedo ayudarte. ¿Qué servicio te interesa?",
+    console.error("❌ Error:", error);
+    res.json({
+      reply: "Hubo un error técnico 😅, intenta nuevamente en unos segundos."
     });
   }
 });
 
-// ===============================
-// RUTA RAÍZ (solo para ver que está vivo)
-// ===============================
-app.get("/", (req, res) => {
-  res.send("🚀 Limitless WhatsApp Bot activo");
-});
-
-// ===============================
-// INICIAR SERVIDOR
-// ===============================
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Servidor activo en puerto ${PORT}`);
+  console.log(`✅ Bot corriendo en puerto ${PORT}`);
 });
