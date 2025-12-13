@@ -1,28 +1,30 @@
 import express from "express";
+import dotenv from "dotenv";
 import OpenAI from "openai";
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-// OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Health check (opcional)
+// 🔍 Ruta simple para verificar que Render está vivo
 app.get("/", (req, res) => {
   res.send("🚀 Limitless WhatsApp Bot activo");
 });
 
-// Webhook para Tidio
+// 🤖 Webhook para Tidio
 app.post("/webhook", async (req, res) => {
   try {
-    const visitorMessage =
-      req.body?.message ||
-      req.body?.visitorMessage ||
+    const userMessage =
+      req.body.message ||
+      req.body.visitorMessage ||
       "Hola";
 
-    console.log("📩 Mensaje recibido:", visitorMessage);
+    console.log("📩 Mensaje recibido:", userMessage);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -30,32 +32,35 @@ app.post("/webhook", async (req, res) => {
         {
           role: "system",
           content: `
-Eres el asistente inteligente de Limitless Design Studio en Querétaro, México.
+Eres el asistente virtual de Limitless Design Studio (Querétaro, México).
 
+Tu trabajo:
+- Atender clientes de diseño, impresión y publicidad.
+- Ayudar con cotizaciones preliminares.
+- Pedir datos claros: producto, medidas, cantidad y ciudad.
+- Responder corto, profesional y amable.
+- Si faltan datos, pregúntalos.
+- No inventes precios exactos, da rangos aproximados.
 Servicios:
-- Sublimación
-- Lonas y viniles
+- Lonas
+- Vinil
 - Rotulación vehicular
-- Publicidad impresa
-- Branding y diseño gráfico
-
-Reglas:
-- Responde claro, profesional y amable
-- Haz preguntas para cotizar
-- No inventes precios, solicita medidas y cantidades
+- Sublimación
+- Tarjetas
+- Flyers
+- Letreros
           `,
         },
         {
           role: "user",
-          content: visitorMessage,
+          content: userMessage,
         },
       ],
-      temperature: 0.6,
     });
 
     const reply =
-      completion.choices[0]?.message?.content ||
-      "Hola 👋 ¿en qué puedo ayudarte?";
+      completion.choices[0].message.content ||
+      "¿En qué puedo ayudarte con tu diseño o impresión?";
 
     console.log("🤖 Respuesta:", reply);
 
@@ -67,13 +72,12 @@ Reglas:
     console.error("❌ Error:", error);
     res.json({
       reply:
-        "Ocurrió un problema técnico 😅 pero puedo ayudarte si intentas de nuevo.",
+        "Ups 😅 hubo un problema técnico. ¿Podrías repetir tu mensaje?",
     });
   }
 });
 
-// Puerto Render
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Bot corriendo en puerto ${PORT}`);
+  console.log(`✅ Bot escuchando en puerto ${PORT}`);
 });
