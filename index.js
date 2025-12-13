@@ -1,31 +1,28 @@
 import express from "express";
-import dotenv from "dotenv";
 import OpenAI from "openai";
-
-dotenv.config();
 
 const app = express();
 app.use(express.json());
 
+// OpenAI
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Ruta de prueba
+// Health check (opcional)
 app.get("/", (req, res) => {
   res.send("🚀 Limitless WhatsApp Bot activo");
 });
 
-// Webhook para Tidio / WhatsApp / futuro
+// Webhook para Tidio
 app.post("/webhook", async (req, res) => {
   try {
-    const userMessage = req.body.message;
+    const visitorMessage =
+      req.body?.message ||
+      req.body?.visitorMessage ||
+      "Hola";
 
-    if (!userMessage) {
-      return res.json({
-        reply: "¿Me puedes escribir tu consulta para ayudarte mejor? 😊"
-      });
-    }
+    console.log("📩 Mensaje recibido:", visitorMessage);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -33,45 +30,50 @@ app.post("/webhook", async (req, res) => {
         {
           role: "system",
           content: `
-Eres el asistente oficial de Limitless Design Studio (Querétaro, México).
+Eres el asistente inteligente de Limitless Design Studio en Querétaro, México.
 
 Servicios:
-- Lonas publicitarias
-- Rotulación vehicular
-- Vinil (corte y full color)
 - Sublimación
-- Playeras personalizadas
-- Tarjetas, volantes, etiquetas
-- Señalética y anuncios
+- Lonas y viniles
+- Rotulación vehicular
+- Publicidad impresa
+- Branding y diseño gráfico
 
 Reglas:
-- Español claro y profesional
-- Tono amable y cercano
-- Guía al cliente paso a paso
-- Pide datos solo cuando sea necesario
-`
+- Responde claro, profesional y amable
+- Haz preguntas para cotizar
+- No inventes precios, solicita medidas y cantidades
+          `,
         },
         {
           role: "user",
-          content: userMessage
-        }
-      ]
+          content: visitorMessage,
+        },
+      ],
+      temperature: 0.6,
     });
 
-    const reply = completion.choices[0].message.content;
+    const reply =
+      completion.choices[0]?.message?.content ||
+      "Hola 👋 ¿en qué puedo ayudarte?";
 
-    // 🔑 ESTO ES LO QUE TIDIO NECESITA
-    res.json({ reply });
+    console.log("🤖 Respuesta:", reply);
 
+    // 👇 ESTO ES LO CLAVE PARA TIDIO
+    res.json({
+      reply: reply,
+    });
   } catch (error) {
     console.error("❌ Error:", error);
     res.json({
-      reply: "Hubo un error técnico 😅, intenta nuevamente en unos segundos."
+      reply:
+        "Ocurrió un problema técnico 😅 pero puedo ayudarte si intentas de nuevo.",
     });
   }
 });
 
-const PORT = process.env.PORT || 3000;
+// Puerto Render
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Bot corriendo en puerto ${PORT}`);
 });
