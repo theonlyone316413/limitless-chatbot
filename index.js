@@ -1,5 +1,4 @@
 import express from "express";
-import fetch from "node-fetch";
 import OpenAI from "openai";
 
 const app = express();
@@ -10,27 +9,30 @@ app.use(express.json());
 // ======================
 const PORT = process.env.PORT || 10000;
 
-const {
-  OPENAI_API_KEY,
-  WHATSAPP_TOKEN,
-  WHATSAPP_PHONE_NUMBER_ID,
-  WHATSAPP_VERIFY_TOKEN,
-} = process.env;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 
 // ======================
 // BASIC VALIDATION
 // ======================
-if (!OPENAI_API_KEY) throw new Error("Missing OPENAI_API_KEY");
-if (!WHATSAPP_TOKEN) throw new Error("Missing WHATSAPP_TOKEN");
-if (!WHATSAPP_PHONE_NUMBER_ID) throw new Error("Missing WHATSAPP_PHONE_NUMBER_ID");
-if (!WHATSAPP_VERIFY_TOKEN) throw new Error("Missing WHATSAPP_VERIFY_TOKEN");
+function requireEnv(name, value) {
+  if (!value) {
+    console.error(`❌ Missing env var: ${name}`);
+    throw new Error(`Missing env var: ${name}`);
+  }
+}
+
+requireEnv("OPENAI_API_KEY", OPENAI_API_KEY);
+requireEnv("WHATSAPP_TOKEN", WHATSAPP_TOKEN);
+requireEnv("WHATSAPP_PHONE_NUMBER_ID", WHATSAPP_PHONE_NUMBER_ID);
+requireEnv("WHATSAPP_VERIFY_TOKEN", WHATSAPP_VERIFY_TOKEN);
 
 // ======================
 // OPENAI CLIENT
 // ======================
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // ======================
 // ROOT
@@ -41,18 +43,33 @@ app.get("/", (req, res) => {
 
 // ======================
 // WEBHOOK VERIFY (META)
+// IMPORTANT: Must return hub.challenge as plain text when verified
 // ======================
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  console.log("🔎 WEBHOOK VERIFY:", { mode, token, challenge });
-  console.log("🔐 ENV TOKEN:", WHATSAPP_VERIFY_TOKEN);
+  // Logs that reveal invisible chars
+  console.log("🔎 WEBHOOK VERIFY RAW:", {
+    mode: JSON.stringify(mode),
+    token: JSON.stringify(token),
+    challenge: JSON.stringify(challenge),
+  });
+  console.log("🔐 ENV TOKEN RAW:", JSON.stringify(WHATSAPP_VERIFY_TOKEN));
 
-  if (mode === "subscribe" && token === WHATSAPP_VERIFY_TOKEN) {
+  const tokenClean = (token ?? "").toString().trim();
+  const envClean = (WHATSAPP_VERIFY_TOKEN ?? "").toString().trim();
+
+  console.log("🧼 CLEAN COMPARE:", {
+    tokenClean: JSON.stringify(tokenClean),
+    envClean: JSON.stringify(envClean),
+    mode,
+  });
+
+  if (mode === "subscribe" && tokenClean === envClean) {
     console.log("✅ Webhook verified by Meta");
-    return res.status(200).send(challenge);
+    return res.status(200).type("text/plain").send(challenge);
   }
 
   console.log("❌ Webhook verification failed");
@@ -63,7 +80,8 @@ app.get("/webhook", (req, res) => {
 // WEBHOOK RECEIVE (MESSAGES)
 // ======================
 app.post("/webhook", async (req, res) => {
-  res.sendStatus(200); // Always ACK Meta fast
+  // Always ACK Meta fast
+  res.sendStatus(200);
 
   try {
     const entry = req.body.entry?.[0];
@@ -74,6 +92,7 @@ app.post("/webhook", async (req, res) => {
     if (!message) return;
 
     const from = message.from;
+
     const text =
       message.text?.body ||
       message.button?.text ||
@@ -81,14 +100,14 @@ app.post("/webhook", async (req, res) => {
       message.interactive?.list_reply?.title ||
       "";
 
-    if (!text) return;
+    if (!text.trim()) return;
 
-    console.log("📩 Incoming:", from, text);
+    console.log("📩 Incoming:", { from, text });
 
     const reply = await generateAssistantReply(text);
     await sendWhatsAppMessage(from, reply);
   } catch (err) {
-    console.error("🔥 Webhook error:", err.message);
+    console.error("🔥 Webhook error:", err?.message || err);
   }
 });
 
@@ -106,14 +125,14 @@ Servicios: diseño gráfico, impresión, lonas, rótulos, vinil, herrería, publ
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: systemPrompt.trim() },
       { role: "user", content: userText },
     ],
     temperature: 0.6,
     max_tokens: 250,
   });
 
-  return response.choices[0].message.content || "¿Me repites por favor?";
+  return response.choices?.[0]?.message?.content?.trim() || "¿Me repites por favor?";
 }
 
 // ======================
@@ -138,12 +157,12 @@ async function sendWhatsAppMessage(to, body) {
     body: JSON.stringify(payload),
   });
 
-  const data = await resp.json();
+  const data = await resp.json().catch(() => ({}));
 
   if (!resp.ok) {
     console.error("❌ WhatsApp send failed:", resp.status, data);
   } else {
-    console.log("✅ WhatsApp message sent");
+    console.log("✅ WhatsApp message sent:", data?.messages?.[0]?.id || data);
   }
 }
 
