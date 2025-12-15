@@ -1,127 +1,57 @@
 import express from "express";
-import fetch from "node-fetch";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 const PORT = process.env.PORT || 10000;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 
-// =====================
 // Health check
-// =====================
 app.get("/", (req, res) => {
-  res.send("Limitless WhatsApp bot is running 🚀");
+  res.status(200).send("Limitless webhook is running ✅");
 });
 
-// =====================
-// WEBHOOK VERIFY (GET)
-// =====================
+// ✅ Webhook verification (Meta calls this GET)
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook verified!");
-    return res.status(200).send(challenge);
+  // Log helpful info (no secrets)
+  console.log("Webhook verify attempt:", { mode, tokenReceived: token });
+
+  if (mode === "subscribe" && token === WHATSAPP_VERIFY_TOKEN) {
+    console.log("✅ Webhook verified");
+    // IMPORTANT: must return the challenge as plain text
+    return res.status(200).type("text/plain").send(challenge);
   }
 
-  console.error("❌ Webhook verification failed", { mode, token });
+  console.log("❌ Webhook verify failed", {
+    mode,
+    tokenReceived: token,
+    expectedToken: WHATSAPP_VERIFY_TOKEN,
+  });
   return res.sendStatus(403);
 });
 
-// =====================
-// WEBHOOK RECEIVE (POST)
-// =====================
-app.post("/webhook", async (req, res) => {
+// ✅ Webhook receiver (Meta sends events here POST)
+app.post("/webhook", (req, res) => {
+  // Always respond quickly so Meta doesn't retry
   res.sendStatus(200);
 
   try {
-    const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const message = change?.value?.messages?.[0];
-
-    if (!message) return;
-
-    const from = message.from;
-    const text = message.text?.body;
-
-    if (!text) return;
-
-    console.log("📩 Incoming:", from, text);
-
-    const reply = await generateAssistantReply(text);
-    await sendWhatsAppText(from, reply);
-
+    console.log("Incoming webhook:", JSON.stringify(req.body));
+    // Aquí ya luego procesas mensajes y respondes con tu lógica
   } catch (err) {
-    console.error("❌ Error handling webhook:", err);
+    console.error("Webhook POST error:", err);
   }
 });
 
-// =====================
-// OpenAI
-// =====================
-async function generateAssistantReply(userText) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Eres el asistente de Limitless Design Studio. Responde claro, rápido y profesional. Pide datos si faltan.",
-        },
-        { role: "user", content: userText },
-      ],
-      temperature: 0.6,
-    }),
-  });
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || "¿Me repites por favor?";
-}
-
-// =====================
-// WhatsApp Send
-// =====================
-async function sendWhatsAppText(to, text) {
-  const url = `https://graph.facebook.com/v19.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
-
-  const payload = {
-    messaging_product: "whatsapp",
-    to,
-    type: "text",
-    text: { body: text },
-  };
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await resp.json();
-  if (!resp.ok) {
-    console.error("❌ WhatsApp send failed:", data);
-  } else {
-    console.log("✅ WhatsApp message sent");
-  }
-}
-
-// =====================
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log("Webhook: /webhook");
 });
