@@ -1,5 +1,6 @@
 import express from "express";
 import OpenAI from "openai";
+import axios from "axios";
 
 const app = express();
 app.use(express.json());
@@ -43,29 +44,16 @@ app.get("/", (req, res) => {
 
 // ======================
 // WEBHOOK VERIFY (META)
-// IMPORTANT: Must return hub.challenge as plain text when verified
 // ======================
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  // Logs that reveal invisible chars
-  console.log("🔎 WEBHOOK VERIFY RAW:", {
-    mode: JSON.stringify(mode),
-    token: JSON.stringify(token),
-    challenge: JSON.stringify(challenge),
-  });
-  console.log("🔐 ENV TOKEN RAW:", JSON.stringify(WHATSAPP_VERIFY_TOKEN));
-
   const tokenClean = (token ?? "").toString().trim();
   const envClean = (WHATSAPP_VERIFY_TOKEN ?? "").toString().trim();
 
-  console.log("🧼 CLEAN COMPARE:", {
-    tokenClean: JSON.stringify(tokenClean),
-    envClean: JSON.stringify(envClean),
-    mode,
-  });
+  console.log("🔎 VERIFY:", { mode, tokenClean, envClean });
 
   if (mode === "subscribe" && tokenClean === envClean) {
     console.log("✅ Webhook verified by Meta");
@@ -77,7 +65,7 @@ app.get("/webhook", (req, res) => {
 });
 
 // ======================
-// WEBHOOK RECEIVE (MESSAGES)
+// WEBHOOK RECEIVE
 // ======================
 app.post("/webhook", async (req, res) => {
   // Always ACK Meta fast
@@ -87,6 +75,11 @@ app.post("/webhook", async (req, res) => {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
+
+    // ✅ Ignorar statuses (entregado/leído/etc.)
+    if (value?.statuses?.length) {
+      return;
+    }
 
     const message = value?.messages?.[0];
     if (!message) return;
@@ -107,7 +100,7 @@ app.post("/webhook", async (req, res) => {
     const reply = await generateAssistantReply(text);
     await sendWhatsAppMessage(from, reply);
   } catch (err) {
-    console.error("🔥 Webhook error:", err?.message || err);
+    console.error("🔥 Webhook error:", err?.response?.data || err?.message || err);
   }
 });
 
@@ -132,7 +125,10 @@ Servicios: diseño gráfico, impresión, lonas, rótulos, vinil, herrería, publ
     max_tokens: 250,
   });
 
-  return response.choices?.[0]?.message?.content?.trim() || "¿Me repites por favor?";
+  return (
+    response.choices?.[0]?.message?.content?.trim() ||
+    "¿Me repites por favor?"
+  );
 }
 
 // ======================
@@ -148,21 +144,22 @@ async function sendWhatsAppMessage(to, body) {
     text: { body },
   };
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const resp = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 15000,
+    });
 
-  const data = await resp.json().catch(() => ({}));
-
-  if (!resp.ok) {
-    console.error("❌ WhatsApp send failed:", resp.status, data);
-  } else {
-    console.log("✅ WhatsApp message sent:", data?.messages?.[0]?.id || data);
+    console.log("✅ WhatsApp message sent:", resp.data?.messages?.[0]?.id || resp.data);
+  } catch (err) {
+    console.error(
+      "❌ WhatsApp send failed:",
+      err?.response?.status,
+      err?.response?.data || err?.message
+    );
   }
 }
 
