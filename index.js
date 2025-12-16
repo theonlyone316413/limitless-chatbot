@@ -1,5 +1,6 @@
 import express from "express";
 import OpenAI from "openai";
+import fetch from "node-fetch";
 
 const app = express();
 app.use(express.json());
@@ -15,12 +16,12 @@ const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 
 // ======================
-// VALIDATION
+// BASIC VALIDATION
 // ======================
 function requireEnv(name, value) {
   if (!value) {
     console.error(`❌ Missing env var: ${name}`);
-    process.exit(1);
+    throw new Error(`Missing env var: ${name}`);
   }
 }
 
@@ -32,29 +33,33 @@ requireEnv("WHATSAPP_VERIFY_TOKEN", WHATSAPP_VERIFY_TOKEN);
 // ======================
 // OPENAI CLIENT
 // ======================
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // ======================
 // ROOT
 // ======================
 app.get("/", (req, res) => {
-  res.status(200).send("✅ Limitless WhatsApp Bot is running");
+  res.status(200).send("Limitless WhatsApp bot is running 🚀");
 });
 
 // ======================
-// META WEBHOOK VERIFY
+// WEBHOOK VERIFY (META)
 // ======================
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  const tokenClean = (token ?? "").trim();
-  const envClean = (WHATSAPP_VERIFY_TOKEN ?? "").trim();
+  const tokenClean = (token ?? "").toString().trim();
+  const envClean = (WHATSAPP_VERIFY_TOKEN ?? "").toString().trim();
 
-  console.log("🔐 VERIFY:", { mode, tokenClean, envClean });
+  console.log("🔎 WEBHOOK VERIFY:", {
+    mode,
+    token: JSON.stringify(token),
+    env: JSON.stringify(WHATSAPP_VERIFY_TOKEN),
+    tokenClean: JSON.stringify(tokenClean),
+    envClean: JSON.stringify(envClean),
+  });
 
   if (mode === "subscribe" && tokenClean === envClean) {
     console.log("✅ Webhook verified by Meta");
@@ -66,21 +71,25 @@ app.get("/webhook", (req, res) => {
 });
 
 // ======================
-// RECEIVE WHATSAPP MSG
+// WEBHOOK RECEIVE (MESSAGES)
 // ======================
 app.post("/webhook", async (req, res) => {
-  // Respond fast to Meta
+  // ACK rápido a Meta
   res.sendStatus(200);
 
   try {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
-    const message = value?.messages?.[0];
 
-    if (!message) return;
+    const message = value?.messages?.[0];
+    if (!message) {
+      console.log("ℹ️ Webhook hit, but no message payload");
+      return;
+    }
 
     const from = message.from;
+
     const text =
       message.text?.body ||
       message.button?.text ||
@@ -88,26 +97,27 @@ app.post("/webhook", async (req, res) => {
       message.interactive?.list_reply?.title ||
       "";
 
-    if (!text.trim()) return;
-
+    console.log("📩 Incoming RAW:", JSON.stringify(message));
     console.log("📩 Incoming:", { from, text });
+
+    if (!text.trim()) return;
 
     const reply = await generateAssistantReply(text);
     await sendWhatsAppMessage(from, reply);
   } catch (err) {
-    console.error("🔥 Webhook error:", err);
+    console.error("🔥 Webhook error:", err?.message || err);
   }
 });
 
 // ======================
-// OPENAI RESPONSE
+// OPENAI REPLY
 // ======================
 async function generateAssistantReply(userText) {
   const systemPrompt = `
 Eres el asistente oficial de Limitless Design Studio.
-Responde en español, claro y profesional.
-Pregunta solo lo necesario para cotizar.
-Servicios: diseño gráfico, impresión, lonas, rótulos, vinil, herrería y publicidad.
+Responde en español, claro, rápido y útil.
+Pregunta lo mínimo necesario para cotizar o atender.
+Servicios: diseño gráfico, impresión, lonas, rótulos, vinil, herrería, publicidad.
 `;
 
   const response = await openai.chat.completions.create({
@@ -120,10 +130,7 @@ Servicios: diseño gráfico, impresión, lonas, rótulos, vinil, herrería y pub
     max_tokens: 250,
   });
 
-  return (
-    response.choices?.[0]?.message?.content?.trim() ||
-    "¿Podrías darme un poco más de información, por favor?"
-  );
+  return response.choices?.[0]?.message?.content?.trim() || "¿Me repites por favor?";
 }
 
 // ======================
@@ -139,6 +146,8 @@ async function sendWhatsAppMessage(to, body) {
     text: { body },
   };
 
+  console.log("➡️ Sending WhatsApp message:", { to, body });
+
   const resp = await fetch(url, {
     method: "POST",
     headers: {
@@ -151,9 +160,9 @@ async function sendWhatsAppMessage(to, body) {
   const data = await resp.json().catch(() => ({}));
 
   if (!resp.ok) {
-    console.error("❌ WhatsApp send failed:", resp.status, data);
+    console.error("❌ WhatsApp send failed:", resp.status, JSON.stringify(data));
   } else {
-    console.log("✅ WhatsApp sent:", data?.messages?.[0]?.id);
+    console.log("✅ WhatsApp message sent:", data?.messages?.[0]?.id || JSON.stringify(data));
   }
 }
 
