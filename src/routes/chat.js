@@ -9,8 +9,12 @@ const openai = new OpenAI({
 });
 
 router.post("/", async (req, res) => {
+  console.log("📩 CHAT REQUEST BODY:", req.body);
+
   try {
     const { message } = req.body;
+
+
 
     if (!message) {
       return res.status(400).json({ reply: "Mensaje vacío" });
