@@ -27,10 +27,13 @@ router.post("/", async (req, res) => {
     res.json({
       reply: completion.choices[0].message.content
     });
-  } catch (err) {
-    console.error("OPENAI ERROR:", err.response?.data || err.message);
-    res.status(500).json({ reply: "Internal error 🤯" });
-  }
+ } catch (err) {
+  console.error("========== OPENAI ERROR ==========");
+  console.error(err);
+  console.error("==================================");
+  res.status(500).json({ reply: "Internal error 🤯" });
+}
+
 });
 
 export default router;
