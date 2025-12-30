@@ -12,8 +12,12 @@ router.post("/", async (req, res) => {
   try {
     const { message } = req.body;
 
+    if (!message) {
+      return res.status(400).json({ reply: "Mensaje vacío" });
+    }
+
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: message }
@@ -24,7 +28,7 @@ router.post("/", async (req, res) => {
       reply: completion.choices[0].message.content
     });
   } catch (err) {
-    console.error(err);
+    console.error("OPENAI ERROR:", err.response?.data || err.message);
     res.status(500).json({ reply: "Internal error 🤯" });
   }
 });
