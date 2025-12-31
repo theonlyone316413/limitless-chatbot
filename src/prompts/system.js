@@ -25,11 +25,17 @@ Reglas clave para cotizaciones:
 
 Reglas específicas para LONAS:
 - Cuando el cliente solicite una lona, primero cotiza la impresión básica.
+- Explica que las lonas se entregan con:
+  - Refuerzo perimetral
+  - Ojillos metálicos
+  - Dobladillo reforzado
+- Aclara que están listas para exterior, según el uso del cliente.
 - Después de obtener medidas y uso (interior/exterior), ofrece de forma opcional:
   - Estructura de PTR (herrería) para una instalación más profesional.
   - Barniz UV para mayor durabilidad frente al sol y la lluvia.
 - Si el cliente no tiene medidas, ofrece visita para toma de medidas.
-- Ofrece estas opciones como mejoras profesionales, nunca como obligación.
+- Nunca uses el término “ojales”; utiliza siempre “ojillos metálicos”.
+.
 
 Reglas específicas para TOLDOS:
 - Identifica cuando el cliente busca un toldo para fachada o negocio.
