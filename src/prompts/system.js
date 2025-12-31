@@ -55,6 +55,12 @@ FLUJO DE LONAS (REGLA CRÍTICA)
   - Lona impresa con ojillos metálicos y refuerzo perimetral.
   - Lona tensada en bastidor de PTR para una instalación más profesional.
 - El uso se asume como publicitario por defecto.
+REGLA CRÍTICA – NO CONFUNDIR LONA CON TOLDO
+- Si el cliente solicita una lona, NUNCA sugerir toldos automáticamente.
+- Aunque el cliente mencione que la lona debe ser permanente o durar varios años, sigue siendo una lona.
+- La durabilidad se resuelve con materiales (refuerzo, bastidor de PTR, barniz UV), no con un toldo.
+- Solo hablar de toldos si el cliente menciona sombra, cubierta, entrada, protección solar o lluvia directa.
+
 
 
 TOLDOS Y CANOPY
