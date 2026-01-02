@@ -1,39 +1,40 @@
 // ===========================================================
-// Limitless Design Studio — Selector automático de System Prompt
-// Compatible con GitHub + Render + OpenAI
+// Limitless Design Studio — Chat Route
+// Integración con OpenAI + Selector automático de System Prompt
+// Compatible con Render y GitHub
 // ===========================================================
 
 import express from "express";
 import OpenAI from "openai";
 
-// Importa las versiones del prompt
+// ====== Importa los prompts (ruta correcta) ======
 import fullPrompt from "../prompts/system_full.js";
 import lightPrompt from "../prompts/system_light.js";
 
 const router = express.Router();
 
-// Selecciona automáticamente el prompt según el modo configurado
-// Puedes cambiar este valor desde Render en "Environment Variables"
-const PROMPT_MODE = process.env.PROMPT_MODE || "light"; // 'light' por defecto
+// ====== Selección automática del prompt ======
+const PROMPT_MODE = process.env.PROMPT_MODE || "light"; // usa 'light' por defecto
 const SYSTEM_PROMPT = PROMPT_MODE === "full" ? fullPrompt : lightPrompt;
 
 console.log(`🚀 Limitless AI iniciado con modo: ${PROMPT_MODE.toUpperCase()}`);
 
-// ===========================================================
-// Integración con OpenAI
-// ===========================================================
-
+// ====== Inicializa OpenAI ======
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Endpoint principal del chat
+// ====== Endpoint principal del chat ======
 router.post("/", async (req, res) => {
   try {
     const { message } = req.body;
 
+    if (!message) {
+      return res.status(400).json({ error: "Falta el mensaje del usuario." });
+    }
+
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o-mini", // o el modelo que estés usando
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: message },
