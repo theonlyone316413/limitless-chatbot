@@ -125,7 +125,6 @@ POLARIZADOS – LINEAMIENTOS
 - Si el polarizado es arquitectónico (oficinas o locales), ofrece tonos decorativos o reflectivos según necesidad estética o térmica.
 - Solo ofrece contacto con asesor humano cuando el cliente pida cotización final o desee agendar instalación.
 
-
 ================================
 TOLDOS – DIFERENCIACIÓN CLARA
 ================================
