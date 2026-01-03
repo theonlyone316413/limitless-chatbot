@@ -1,60 +1,78 @@
 // ===========================================================
-// Limitless Design Studio — Chat Route con memoria parcial
-// Optimizado para menor uso de tokens
+// Limitless Design Studio — Chat Route con Redis + control de promociones
 // ===========================================================
 
 import express from "express";
 import OpenAI from "openai";
+import redis from "../utils/redisClient.js";
 import fullPrompt from "../prompts/system_full.js";
 import lightPrompt from "../prompts/system_light.js";
 
 const router = express.Router();
 
-// ====== Selección automática de prompt ======
 const PROMPT_MODE = process.env.PROMPT_MODE || "light";
 const SYSTEM_PROMPT = PROMPT_MODE === "full" ? fullPrompt : lightPrompt;
+const MAX_MEMORY = 5;
+
 console.log(`🚀 Limitless AI iniciado con modo: ${PROMPT_MODE.toUpperCase()}`);
 
-// ====== Inicializa OpenAI ======
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// ===========================================================
+// Funciones de memoria persistente (Redis)
+// ===========================================================
 
-// ====== Memoria temporal (en RAM) ======
-const conversationHistory = new Map(); // almacena historial por sesión o IP
-const MAX_MEMORY = 5; // número de mensajes recientes a conservar
-
-// ====== Función para mantener las últimas N interacciones ======
-function getRecentMessages(sessionId) {
-  const history = conversationHistory.get(sessionId) || [];
-  return history.slice(-MAX_MEMORY);
+// Obtener historial reciente
+async function getRecentMessages(sessionId) {
+  const data = await redis.get(`chat:${sessionId}`);
+  return data ? JSON.parse(data) : [];
 }
 
-// ====== Guardar nuevos mensajes ======
-function updateHistory(sessionId, role, content) {
-  const history = conversationHistory.get(sessionId) || [];
+// Guardar mensaje
+async function updateHistory(sessionId, role, content) {
+  const history = await getRecentMessages(sessionId);
   history.push({ role, content });
-  conversationHistory.set(sessionId, history.slice(-MAX_MEMORY * 2)); // conserva contexto limitado
+  await redis.set(`chat:${sessionId}`, JSON.stringify(history.slice(-MAX_MEMORY * 2)));
 }
 
-// ====== Ruta principal del chat ======
+// Detectar si ya ofreció promoción
+async function promoAlreadyMentioned(sessionId) {
+  const promoFlag = await redis.get(`promo:${sessionId}`);
+  return promoFlag === "true";
+}
+
+// Marcar que ya se ofreció la promoción
+async function markPromoMentioned(sessionId) {
+  await redis.set(`promo:${sessionId}`, "true");
+}
+
+// ===========================================================
+// Endpoint principal del chat
+// ===========================================================
 router.post("/", async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     if (!message) return res.status(400).json({ error: "Falta el mensaje del usuario." });
 
-    const id = sessionId || req.ip; // identifica sesión (puedes usar tu propio ID)
+    const id = sessionId || req.ip;
 
-    // Obtiene últimas interacciones
-    const recent = getRecentMessages(id);
+    const recent = await getRecentMessages(id);
+    const promoMentioned = await promoAlreadyMentioned(id);
+
+    // Si ya ofreció la promo, agrega una instrucción dinámica
+    let dynamicPrompt = SYSTEM_PROMPT;
+    if (promoMentioned) {
+      dynamicPrompt += `
+Importante: Ya ofreciste la promoción de descuento. 
+No vuelvas a mencionarla en tus respuestas futuras durante esta conversación.`;
+    }
 
     const messages = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: dynamicPrompt },
       ...recent,
       { role: "user", content: message },
     ];
 
-    // Llamada a OpenAI
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
@@ -62,9 +80,14 @@ router.post("/", async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
-    // Guarda mensaje del usuario y respuesta del bot
-    updateHistory(id, "user", message);
-    updateHistory(id, "assistant", reply);
+    // Si el mensaje contiene la promo, marca el flag en Redis
+    if (reply.toLowerCase().includes("20% de descuento") || reply.toLowerCase().includes("promoción")) {
+      await markPromoMentioned(id);
+    }
+
+    // Guarda conversación
+    await updateHistory(id, "user", message);
+    await updateHistory(id, "assistant", reply);
 
     res.json({ reply });
   } catch (error) {
