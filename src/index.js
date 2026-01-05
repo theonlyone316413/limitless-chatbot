@@ -2,7 +2,9 @@ import express from "express";
 import cors from "cors";
 import OpenAI from "openai";
 
-import SYSTEM_FULL from "./prompts/system_full.js";
+// import SYSTEM_FULL from "./prompts/system_full.js";
+const SYSTEM_FULL = "Test prompt";
+
 import redis from "./utils/redisClient.js";
 
 const app = express();
