@@ -1,60 +1,41 @@
 import express from "express";
 import cors from "cors";
+import OpenAI from "openai";
+
+import SYSTEM_FULL from "./prompts/system_full.js";
+import SYSTEM_LIGHT from "./prompts/system_light.js";
 
 import chatRoute from "./routes/chat.js";
 import quoteRoute from "./routes/quotes.js";
 import servicesRoute from "./routes/services.js";
 
+import redis from "./utils/redisClient.js";
+
 const app = express();
 
 /* =========================
-   MIDDLEWARES (IMPORTANTES)
+   MIDDLEWARES
 ========================= */
 app.use(cors());
-
-// PARA TWILIO (MUY IMPORTANTE)
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false })); // Twilio
 app.use(express.json());
 
 /* =========================
-   ROUTES EXISTENTES
+   HELPERS
 ========================= */
-app.use("/chat", chatRoute);
-app.use("/quote", quoteRoute);
-app.use("/services", servicesRoute);
+const isVagueMessage = (text = "") => {
+  const vague = [
+    "hola",
+    "buenas",
+    "info",
+    "precio",
+    "cotizacion",
+    "cotización",
+    "hey",
+    "hi",
+    "hello",
+  ];
+  return vague.includes(text.trim().toLowerCase());
+};
 
-/* =========================
-   👉 WEBHOOK PARA TWILIO
-========================= */
-app.post("/webhook", (req, res) => {
-  console.log("🔥 WEBHOOK HIT FROM TWILIO");
-  console.log("BODY:", req.body);
-
-  const incomingMsg = req.body.Body || "Mensaje vacío";
-
-  // RESPUESTA SIMPLE (PRUEBA)
-  res.status(200).send(`
-    <Response>
-      <Message>
-        🤖 Limitless AI activo.
-        Recibí: "${incomingMsg}"
-      </Message>
-    </Response>
-  `);
-});
-
-/* =========================
-   ROOT (TEST)
-========================= */
-app.get("/", (req, res) => {
-  res.send("🚀 Limitless AI backend running");
-});
-
-/* =========================
-   SERVER
-========================= */
-const PORT = process.env.PORT || 10000;
-
-app.listen(PORT, () => {
-  console.log("🔥 Limitless AI ONLINE on port", PORT);
-});
+const needsClarification = (te
