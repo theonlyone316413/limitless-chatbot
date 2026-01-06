@@ -52,3 +52,12 @@ router.post("/", async (req, res) => {
 
     // ===== RESPUESTA OBLIGATORIA PARA TWILIO =====
     res.set("Content-Type", "text/xml");
+res.send(`
+  <Response>
+    <Message>${reply}</Message>
+  </Response>
+`);
+});
+
+export default router;
+
