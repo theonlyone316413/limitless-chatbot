@@ -1,89 +1,79 @@
-
 import express from "express";
 import { getState, saveState } from "../memory/stateManager.js";
 import { detectService } from "../services/serviceDetector.js";
-console.log("🚨🚨🚨 CHAT.JS NUEVO — VERSION FINAL 🚨🚨🚨");
-
+import { serviceSteps } from "../services/serviceSteps.js";
 
 const router = express.Router();
 
-/**
- * ⚠️ CRÍTICO PARA TWILIO
- * Twilio envía application/x-www-form-urlencoded
- */
-router.use(express.urlencoded({ extended: false }));
+console.log("🚨 CHAT.JS ACTIVO — LOGICA POR STEPS");
 
 router.post("/", async (req, res) => {
   try {
     const from = req.body.From;
     const incomingMsg = (req.body.Body || "").trim();
-    const msgLower = incomingMsg.toLowerCase();
 
-    // 1️⃣ Obtener estado (siempre objeto)
     let state = await getState(from);
 
-    // 2️⃣ RESET INTELIGENTE POR SALUDO
-    const isGreeting =
-      msgLower === "hola" ||
-      msgLower === "hello" ||
-      msgLower === "hi" ||
-      msgLower === "buenas";
-
-    if (isGreeting) {
-      state = {};
-    }
-
-    // 3️⃣ Detectar servicio SOLO si no existe
+    // 1️⃣ PRIMER MENSAJE (no hay estado)
     if (!state.service) {
       const detected = detectService(incomingMsg);
+
       if (detected) {
-        state.service = detected.service;
-        state.step = "inicio";
+        state = {
+          service: detected.service,
+          step: detected.step,
+        };
+        await saveState(from, state);
+
+        const stepConfig = serviceSteps[detected.service][detected.step];
+
+        return sendTwilio(res, stepConfig.question);
       }
+
+      // saludo genérico SOLO si no detecta servicio
+      return sendTwilio(
+        res,
+        "Perfecto 😊 ¿Qué tipo de servicio estás buscando? Por ejemplo: lona, rotulación, stickers, toldo o letras 3D."
+      );
     }
 
-    let reply = "Perfecto, cuéntame un poco más para ayudarte mejor.";
+    // 2️⃣ FLUJO ACTIVO
+    const currentService = state.service;
+    const currentStep = state.step;
 
-    // 4️⃣ FLUJO LONA
-    if (state.service === "lona") {
-      if (state.step === "inicio") {
-        reply =
-          "Perfecto. Para ayudarte mejor, ¿la lona es para fachada, evento o promoción temporal?";
-        state.step = "uso";
-      } else if (state.step === "uso") {
-        reply =
-          "Gracias. ¿Podrías compartirme las medidas aproximadas de la lona?";
-        state.step = "medidas";
-      } else if (state.step === "medidas") {
-        reply =
-          "Excelente. ¿Ya cuentas con diseño o logotipo, o prefieres algo sencillo?";
-        state.step = "diseno";
-      } else if (state.step === "diseno") {
-        reply =
-          "Perfecto. Con esa información puedo ofrecerte opciones profesionales de material y acabado según lo que buscas.";
-        state.step = "listo";
-      }
-    }
+    const stepConfig = serviceSteps[currentService][currentStep];
 
-    // 5️⃣ Guardar estado
+    // Guardamos respuesta del usuario
+    state[currentStep] = incomingMsg;
+
+    // Avanzamos step
+    state.step = stepConfig.next;
     await saveState(from, state);
 
-    // 6️⃣ Respuesta Twilio
-    res.set("Content-Type", "text/xml");
-    res.send(`
-      <Response>
-        <Message>${reply}</Message>
-      </Response>
-    `);
-  } catch (error) {
-    console.error("❌ Error en chat.js:", error);
-    res.set("Content-Type", "text/xml");
-    res.send(`
-      <Response>
-        <Message>Ocurrió un error, intenta nuevamente.</Message>
-      </Response>
-    `);
+    // Si ya no hay más pasos → cierre suave (NO asesor todavía)
+    if (!state.step) {
+      return sendTwilio(
+        res,
+        "Excelente 👍 Con esto ya tengo claro tu proyecto. En el siguiente mensaje puedo ayudarte a definir materiales y opciones profesionales."
+      );
+    }
+
+    // Pregunta siguiente
+    const nextStepConfig = serviceSteps[currentService][state.step];
+    return sendTwilio(res, nextStepConfig.question);
+  } catch (err) {
+    console.error("❌ ERROR CHAT:", err);
+    return sendTwilio(res, "Ocurrió un error. Intentemos nuevamente 🙏");
   }
 });
+
+function sendTwilio(res, message) {
+  res.set("Content-Type", "text/xml");
+  res.send(`
+    <Response>
+      <Message>${message}</Message>
+    </Response>
+  `);
+}
 
 export default router;
