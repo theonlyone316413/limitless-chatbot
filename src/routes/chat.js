@@ -1,60 +1,114 @@
-import { generateReply } from "../utils/generateReply.js";
 import express from "express";
 import { getState, saveState } from "../memory/stateManager.js";
 import { detectService } from "../services/serviceDetector.js";
-import { getNextStep } from "../services/serviceSteps.js";
 
 const router = express.Router();
 
+/**
+ * Webhook principal para WhatsApp (Twilio)
+ */
 router.post("/", async (req, res) => {
-  console.log("🔥 WEBHOOK HIT FROM TWILIO");
-
   try {
-    const incomingMsg = req.body.Body?.trim();
     const from = req.body.From;
+    const incomingMsg = (req.body.Body || "").trim();
 
-    if (!incomingMsg || !from) {
-      res.set("Content-Type", "text/xml");
-      return res.send("<Response></Response>");
+    // Recuperar estado del usuario
+    let state = await getState(from);
+
+    // ===============================
+    // 1️⃣ PRIMER MENSAJE (SIN ASESOR)
+    // ===============================
+    if (!state) {
+      await saveState(from, {
+        step: "INIT",
+        lastMessage: incomingMsg,
+        updatedAt: Date.now(),
+      });
+
+      return twilioReply(
+        res,
+        "¡Hola! ¿En qué puedo ayudarte hoy? ¿Buscas información sobre alguno de nuestros servicios?"
+      );
     }
 
-    console.log("📩 From:", from);
-    console.log("📩 Message:", incomingMsg);
+    // ===============================
+    // 2️⃣ DETECTAR SERVICIO (si no existe)
+    // ===============================
+    if (!state.service) {
+      const detected = detectService(incomingMsg);
 
-    const state = (await getState(from)) || {};
+      if (detected) {
+        state.service = detected.service;
+        state.step = "ASK_MEASURES";
 
-    const service = state.service || detectService(incomingMsg);
-    const nextStep = getNextStep(service, state.step);
+        await saveState(from, state);
 
-    await saveState(from, {
-      service,
-      step: nextStep,
-      lastMessage: incomingMsg,
-      updatedAt: Date.now(),
-    });
+        // ❌ SIN asesor aquí
+        return twilioReply(
+          res,
+          "Perfecto. Para ayudarte mejor, ¿qué medidas aproximadas necesitas para la lona?"
+        );
+      }
 
- const reply = await generateReply({
-  message: incomingMsg,
-  state: { service, step: nextStep },
-});
+      return twilioReply(
+        res,
+        "Entendido. Cuéntame un poco más sobre lo que necesitas y con gusto te ayudo."
+      );
+    }
 
+    // ===============================
+    // 3️⃣ FLUJO LONA – PEDIR MEDIDAS
+    // ===============================
+    if (state.service === "lona" && state.step === "ASK_MEASURES") {
+      state.measures = incomingMsg;
+      state.step = "ASK_DESIGN";
 
-    res.set("Content-Type", "text/xml");
-    return res.send(`
-      <Response>
-        <Message>${reply}</Message>
-      </Response>
-    `);
+      await saveState(from, state);
+
+      return twilioReply(
+        res,
+        "Gracias. ¿Ya cuentas con diseño o logotipo, o prefieres algo sencillo?"
+      );
+    }
+
+    // ===============================
+    // 4️⃣ DESPUÉS DE INFO → AHORA SÍ OPCIONAL ASESOR
+    // ===============================
+    if (state.service === "lona" && state.step === "ASK_DESIGN") {
+      state.design = incomingMsg;
+      state.step = "READY_TO_QUOTE";
+
+      await saveState(from, state);
+
+      return twilioReply(
+        res,
+        "Excelente. Con esa información puedo orientarte mejor. Si deseas, puedo pasarte con un asesor para afinar materiales, tiempos y cotización."
+      );
+    }
+
+    // ===============================
+    // FALLBACK SEGURO
+    // ===============================
+    return twilioReply(
+      res,
+      "Perfecto, dime un poco más y continuamos."
+    );
   } catch (error) {
     console.error("❌ Error en /chat:", error);
-
-    res.set("Content-Type", "text/xml");
-    return res.send(`
-      <Response>
-        <Message>Ocurrió un error, intenta nuevamente.</Message>
-      </Response>
-    `);
+    return twilioReply(res, "Ocurrió un error, intenta nuevamente.");
   }
 });
+
+/**
+ * Respuesta Twilio (TwiML)
+ */
+function twilioReply(res, message) {
+  res.set("Content-Type", "text/xml");
+  res.send(`
+    <Response>
+      <Message>${message}</Message>
+    </Response>
+  `);
+}
 
 export default router;
