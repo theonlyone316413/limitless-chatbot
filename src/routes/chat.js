@@ -1,3 +1,4 @@
+import { generateReply } from "../utils/generateReply.js";
 import express from "express";
 import { getState, saveState } from "../memory/stateManager.js";
 import { detectService } from "../services/serviceDetector.js";
@@ -32,9 +33,11 @@ router.post("/", async (req, res) => {
       updatedAt: Date.now(),
     });
 
-    const reply = state.step
-      ? "Perfecto, cuéntame un poco más para ayudarte mejor."
-      : "Hola, soy el asistente de Limitless Design Studio. ¿En qué puedo ayudarte hoy?";
+ const reply = await generateReply({
+  message: incomingMsg,
+  state: { service, step: nextStep },
+});
+
 
     res.set("Content-Type", "text/xml");
     return res.send(`
