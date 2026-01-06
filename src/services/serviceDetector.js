@@ -43,7 +43,7 @@ export function detectService(text = "") {
   }
 
   if (msg.includes("polarizado")) {
-    return { service: "polarizado", step: "tipo_polarizado" };
+    return { service: "polarizado", step: "tipo" };
   }
 
   return null;
