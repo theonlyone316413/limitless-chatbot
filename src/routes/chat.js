@@ -6,32 +6,25 @@ import { getNextStep } from "../services/serviceSteps.js";
 const router = express.Router();
 
 router.post("/", async (req, res) => {
-  try {
-    console.log("🔥 WEBHOOK HIT FROM TWILIO");
+  console.log("🔥 WEBHOOK HIT FROM TWILIO");
 
-    // Twilio envía estos campos
+  try {
     const incomingMsg = req.body.Body?.trim();
     const from = req.body.From;
+
+    if (!incomingMsg || !from) {
+      res.set("Content-Type", "text/xml");
+      return res.send("<Response></Response>");
+    }
 
     console.log("📩 From:", from);
     console.log("📩 Message:", incomingMsg);
 
-    // Seguridad básica
-    if (!incomingMsg || !from) {
-      res.set("Content-Type", "text/xml");
-      return res.send(`<Response></Response>`);
-    }
+    const state = (await getState(from)) || {};
 
-    // ===== MEMORIA =====
-    const state = await getState(from);
+    const service = state.service || detectService(incomingMsg);
+    const nextStep = getNextStep(service, state.step);
 
-    // ===== DETECCIÓN DE SERVICIO =====
-    const service = state?.service || detectService(incomingMsg);
-
-    // ===== PASO SIGUIENTE =====
-    const nextStep = getNextStep(service, state?.step);
-
-    // Guardamos estado actualizado
     await saveState(from, {
       service,
       step: nextStep,
@@ -39,25 +32,26 @@ router.post("/", async (req, res) => {
       updatedAt: Date.now(),
     });
 
-    // ===== RESPUESTA (TEMPORAL, HUMANA) =====
-    // Esto luego lo conectamos con OpenAI + prompt
-    let reply;
+    const reply = state.step
+      ? "Perfecto, cuéntame un poco más para ayudarte mejor."
+      : "Hola, soy el asistente de Limitless Design Studio. ¿En qué puedo ayudarte hoy?";
 
-    if (!state) {
-      reply =
-        "Hola, soy el asistente de Limitless Design Studio. ¿En qué puedo ayudarte hoy?";
-    } else {
-      reply = "Perfecto, cuéntame un poco más para ayudarte mejor.";
-    }
-
-    // ===== RESPUESTA OBLIGATORIA PARA TWILIO =====
     res.set("Content-Type", "text/xml");
-res.send(`
-  <Response>
-    <Message>${reply}</Message>
-  </Response>
-`);
+    return res.send(`
+      <Response>
+        <Message>${reply}</Message>
+      </Response>
+    `);
+  } catch (error) {
+    console.error("❌ Error en /chat:", error);
+
+    res.set("Content-Type", "text/xml");
+    return res.send(`
+      <Response>
+        <Message>Ocurrió un error, intenta nuevamente.</Message>
+      </Response>
+    `);
+  }
 });
 
 export default router;
-
