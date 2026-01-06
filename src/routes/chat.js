@@ -4,21 +4,27 @@ import { detectService } from "../services/serviceDetector.js";
 
 const router = express.Router();
 
-/**
- * Webhook principal para Twilio WhatsApp
- * Este archivo asume que getState() SIEMPRE devuelve un objeto {}
- */
 router.post("/", async (req, res) => {
   try {
     const from = req.body.From;
     const incomingMsg = (req.body.Body || "").trim();
+    const msgLower = incomingMsg.toLowerCase();
 
-    // 1️⃣ Obtener estado (siempre objeto)
+    // 1️⃣ Obtener estado (tu stateManager SIEMPRE devuelve {})
     let state = await getState(from);
 
-    const isNewState = !state || Object.keys(state).length === 0;
+    // 2️⃣ RESET INTELIGENTE (AUTOFIX)
+    const isGreeting =
+      msgLower === "hola" ||
+      msgLower === "hello" ||
+      msgLower === "hi" ||
+      msgLower === "buenas";
 
-    // 2️⃣ Detectar servicio SOLO si no existe
+    if (isGreeting) {
+      state = {}; // reset total del flujo
+    }
+
+    // 3️⃣ Detectar servicio SOLO si no existe
     if (!state.service) {
       const detected = detectService(incomingMsg);
 
@@ -30,7 +36,7 @@ router.post("/", async (req, res) => {
 
     let reply = "Perfecto, cuéntame un poco más para ayudarte mejor.";
 
-    // 3️⃣ FLUJO POR SERVICIO
+    // 4️⃣ FLUJO POR SERVICIO
     if (state.service === "lona") {
       if (state.step === "inicio") {
         reply =
@@ -57,10 +63,10 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // 4️⃣ Guardar estado actualizado
+    // 5️⃣ Guardar estado
     await saveState(from, state);
 
-    // 5️⃣ Respuesta obligatoria para Twilio
+    // 6️⃣ Respuesta obligatoria para Twilio
     res.set("Content-Type", "text/xml");
     res.send(`
       <Response>
