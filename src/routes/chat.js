@@ -4,45 +4,33 @@ import { detectService } from "../services/serviceDetector.js";
 
 const router = express.Router();
 
-// ===============================
-// WEBHOOK PRINCIPAL (TWILIO)
-// ===============================
+/**
+ * Webhook principal para Twilio WhatsApp
+ * Este archivo asume que getState() SIEMPRE devuelve un objeto {}
+ */
 router.post("/", async (req, res) => {
   try {
     const from = req.body.From;
-    const msg = (req.body.Body || "").trim().toLowerCase();
+    const incomingMsg = (req.body.Body || "").trim();
 
-let state = await getState(from);
+    // 1️⃣ Obtener estado (siempre objeto)
+    let state = await getState(from);
 
-// Detectamos estado vacío real
-const isNewState = !state || Object.keys(state).length === 0;
+    const isNewState = !state || Object.keys(state).length === 0;
 
-
-    // ===============================
-    // 1️⃣ DETECTAR SERVICIO (solo una vez)
-    // ===============================
-if (isNewState || !state.service) {
-  const detected = detectService(msg);
-
-  if (detected) {
-    state.service = detected.service;
-    state.step = "inicio";
-  }
-}
-
+    // 2️⃣ Detectar servicio SOLO si no existe
+    if (!state.service) {
+      const detected = detectService(incomingMsg);
 
       if (detected) {
         state.service = detected.service;
         state.step = "inicio";
-        await saveState(from, state);
       }
     }
 
     let reply = "Perfecto, cuéntame un poco más para ayudarte mejor.";
 
-    // ===============================
-    // 2️⃣ FLUJO POR SERVICIO
-    // ===============================
+    // 3️⃣ FLUJO POR SERVICIO
     if (state.service === "lona") {
       if (state.step === "inicio") {
         reply =
@@ -69,22 +57,18 @@ if (isNewState || !state.service) {
       }
     }
 
-    // ===============================
-    // 3️⃣ GUARDAR ESTADO
-    // ===============================
+    // 4️⃣ Guardar estado actualizado
     await saveState(from, state);
 
-    // ===============================
-    // 4️⃣ RESPUESTA OBLIGATORIA TWILIO
-    // ===============================
+    // 5️⃣ Respuesta obligatoria para Twilio
     res.set("Content-Type", "text/xml");
     res.send(`
       <Response>
         <Message>${reply}</Message>
       </Response>
     `);
-  } catch (err) {
-    console.error("❌ Error en /chat:", err);
+  } catch (error) {
+    console.error("❌ Error en chat.js:", error);
 
     res.set("Content-Type", "text/xml");
     res.send(`
