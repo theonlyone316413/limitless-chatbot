@@ -27,6 +27,19 @@ router.post("/", async (req, res) => {
     const from = req.body.From;
     const incomingMsg = (req.body.Body || "").trim();
     const lowerMsg = incomingMsg.toLowerCase();
+    const PRICE_INTENT = [
+  "cuanto cuesta",
+  "cuánto cuesta",
+  "precio",
+  "cuanto me cuesta",
+  "cuánto me cuesta",
+  "costo",
+  "vale",
+];
+
+const wantsPrice = PRICE_INTENT.some(p =>
+  lowerMsg.includes(p)
+);
 
     let state = (await getState(from)) || {};
 
