@@ -1,115 +1,106 @@
 export const serviceSteps = {
-
-  // ======================
-  // LONAS
-  // ======================
   lona: [
     {
       key: "uso",
-      question:
-        "Perfecto 👍 ¿La lona será para fachada, evento o promoción temporal?"
+      question: `Perfecto. ¿La lona es para fachada, evento o promoción temporal?`
     },
     {
       key: "medidas",
-      question:
-        "Gracias. ¿Podrías compartirme las medidas aproximadas de la lona?"
+      question: `Gracias. ¿Cuáles son las medidas aproximadas de la lona?`
     },
     {
       key: "cierre",
-      question:
-        "Excelente 💪 Con esas medidas puedo recomendarte una lona reforzada de 18 oz con alta resistencia al sol y la lluvia, ideal para exteriores. En el siguiente mensaje te explico opciones de acabado y tiempos de entrega."
+      question: `Excelente 👍 Con esas medidas puedo recomendarte una lona reforzada de 18 oz con alta resistencia al sol y la lluvia.`
     }
   ],
 
-  // ======================
-  // TOLDOS
-  // ======================
   toldo: [
     {
       key: "tipo",
-      question:
-        "Perfecto 👍 ¿El toldo lo necesitas fijo o desmontable tipo canopy?"
+      question: `Perfecto. ¿El toldo lo necesitas fijo o desmontable?`
     },
     {
       key: "medidas",
-      question:
-        "Gracias. ¿Tienes las medidas aproximadas del ancho y la salida del toldo?"
+      question: `Gracias. ¿Cuáles son las medidas aproximadas del ancho y la salida del toldo?`
     },
     {
       key: "cierre",
-      question:
-        "Excelente 💪 Con esas medidas podemos trabajar un toldo con estructura PTR y lona personalizada, ideal para protección solar y una presencia profesional."
+      question: `Excelente 👍 Con esas medidas podemos trabajar un toldo con estructura PTR y lona personalizada.`
     }
   ],
 
-  // ======================
-  // ROTULACIÓN VEHICULAR
-  // ======================
   rotulacion: [
     {
       key: "tipo_vehiculo",
-      question:
-        "Perfecto 👍 ¿La rotulación es para un vehículo particular, comercial o una flotilla?"
+      question: `Perfecto. ¿La rotulación es para un vehículo particular, comercial o una flotilla?`
     },
     {
       key: "diseno",
-      question:
-        "Gracias. ¿Cuentas con un diseño o logotipo, o deseas que lo desarrollemos?"
+      question: `Gracias. ¿Ya cuentas con diseño o deseas que lo desarrollemos?`
     },
     {
       key: "cierre",
-      question:
-        "Excelente 💪 La rotulación en vinil polimérico con laminado UV ofrece alta durabilidad y gran impacto visual. Puedo explicarte las opciones según el tipo de vehículo."
+      question: `Excelente 👍 La rotulación en vinil polimérico ofrece alta durabilidad y gran impacto visual.`
     }
   ],
 
-  // ======================
-  // LETREROS / CAJAS
-  // ======================
   letrero: [
     {
       key: "tipo_letrero",
-      question:
-        "Perfecto 👍 ¿Buscas un letrero iluminado, caja luminosa o letras 3D?"
+      question: `Perfecto. ¿Buscas un letrero iluminado, caja luminosa o letras 3D?`
     },
     {
       key: "ubicacion",
-      question:
-        "Gracias. ¿El letrero sería para interior o fachada exterior?"
+      question: `Gracias. ¿El letrero sería para interior o fachada exterior?`
     },
     {
       key: "cierre",
-      question:
-        "Excelente 💡 Podemos trabajar iluminación LED de bajo consumo con materiales resistentes para alta visibilidad profesional, incluso de noche."
+      question: `Excelente 👍 Podemos trabajar iluminación LED de bajo consumo con materiales resistentes al exterior.`
     }
   ],
 
-  // ======================
-  // STICKERS
-  // ======================
   stickers: [
     {
       key: "cantidad",
-      question:
-        "Perfecto 👍 ¿Qué cantidad aproximada de stickers necesitas?"
+      question: `Perfecto. ¿Qué cantidad aproximada de stickers necesitas?`
     },
     {
       key: "tamano",
-      question:
-        "Gracias. ¿Qué tamaño aproximado te gustaría para los stickers?"
+      question: `Gracias. ¿Qué tamaño aproximado te gustaría para los stickers?`
     },
     {
       key: "cierre",
-      question:
-        "Excelente 💪 Podemos producir stickers en vinil resistente al agua y al sol, con corte personalizado y excelente definición."
+      question: `Excelente 👍 Podemos producir stickers en vinil resistente al agua y al sol, con corte personalizado.`
     }
   ],
 
-  // ======================
-  // ESTAMPADOS
-  // ======================
   estampados: [
     {
       key: "producto",
-      question:
-        "Perfecto 👍 ¿Buscas estampado en playeras,
+      question: `Perfecto 👍 ¿Buscas estampado en playeras, tazas o ambos?`
+    },
+    {
+      key: "cantidad",
+      question: `Gracias. ¿Cuántas piezas deseas personalizar?`
+    },
+    {
+      key: "cierre",
+      question: `Excelente 👍 Trabajamos sublimado, vinil textil y DTF con colores duraderos y alta calidad.`
+    }
+  ],
+
+  polarizado: [
+    {
+      key: "tipo",
+      question: `Perfecto. ¿El polarizado es para vehículo o para ventanas de local u oficina?`
+    },
+    {
+      key: "detalle",
+      question: `Gracias. ¿Buscas control solar, privacidad o seguridad?`
+    },
+    {
+      key: "cierre",
+      question: `Excelente 👍 El polarizado reduce calor, bloquea rayos UV y mejora la comodidad.`
+    }
+  ]
+};
