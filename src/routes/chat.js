@@ -5,90 +5,79 @@ import { serviceSteps } from "../services/serviceSteps.js";
 
 const router = express.Router();
 
-/**
- * WhatsApp / Twilio entry point
- */
 router.post("/", async (req, res) => {
   try {
     const from = req.body.From;
-    const incoming = (req.body.Body || "").trim();
+    const incomingMsg = (req.body.Body || "").trim();
 
-    if (!from || !incoming) {
-      return send(res, "¿Podrías repetir tu mensaje?");
-    }
+    let state = (await getState(from)) || {};
 
-    let state = await getState(from);
-
-    // ===============================
-    // 1️⃣ DETECTAR SERVICIO (solo 1 vez)
-    // ===============================
+    // =============================
+    // 1️⃣ DETECTAR SERVICIO
+    // =============================
     if (!state.service) {
-      const detected = detectService(incoming);
+      const detected = detectService(incomingMsg);
 
       if (detected) {
-        state = {
-          service: detected.service,
-          step: detected.step,
-        };
+        state.service = detected.service;
+        state.stepIndex = 0;
+
         await saveState(from, state);
 
-        return send(res, serviceSteps[state.service][state.step].question);
+        return respond(
+          res,
+          serviceSteps[state.service][0].question
+        );
       }
 
-      return send(
-        res,
-        "Perfecto, cuéntame un poco más para ayudarte mejor."
-      );
+      return respond(res, "Perfecto, dime un poco más para ayudarte mejor.");
     }
 
-    // ===============================
-    // 2️⃣ AVANZAR PASOS DEL SERVICIO
-    // ===============================
-    const flow = serviceSteps[state.service];
-    const currentStep = flow[state.step];
+    // =============================
+    // 2️⃣ FLUJO POR STEPS
+    // =============================
+    const steps = serviceSteps[state.service];
+    const currentStep = steps[state.stepIndex];
 
     if (!currentStep) {
-      // reset de seguridad
       await saveState(from, {});
-      return send(
+      return respond(
         res,
-        "Perfecto, cuéntame nuevamente qué servicio necesitas."
+        "Excelente 👍 Con esta información puedo prepararte una propuesta completa."
       );
     }
 
     // Guardar respuesta del usuario
     state.answers = state.answers || {};
-    state.answers[state.step] = incoming;
+    state.answers[currentStep.key] = incomingMsg;
 
-    // Determinar siguiente paso
-    const nextStep = currentStep.next;
+    // ⬆️ AVANZAR STEP (ESTO ERA EL BUG)
+    state.stepIndex += 1;
 
-    if (nextStep && flow[nextStep]) {
-      state.step = nextStep;
-      await saveState(from, state);
-
-      return send(res, flow[nextStep].question);
-    }
-
-    // ===============================
-    // 3️⃣ RESPUESTA FINAL (sin asesor automático)
-    // ===============================
     await saveState(from, state);
 
-    return send(
+    // =============================
+    // 3️⃣ SIGUIENTE PASO O CIERRE
+    // =============================
+    if (state.stepIndex < steps.length) {
+      return respond(
+        res,
+        steps[state.stepIndex].question
+      );
+    }
+
+    return respond(
       res,
-      "Excelente 👍 Con esta información puedo prepararte una propuesta adecuada. En el siguiente mensaje te explico materiales y opciones recomendadas."
+      "Excelente 👍 Con esta información puedo recomendarte materiales y rangos de precio según tu proyecto."
     );
+
   } catch (err) {
     console.error("❌ CHAT ERROR:", err);
-    return send(res, "Ocurrió un error. Intentemos nuevamente 🙏");
+    return respond(res, "Ocurrió un error, intentemos nuevamente 🙏");
   }
 });
 
-/**
- * Respuesta obligatoria para Twilio
- */
-function send(res, message) {
+function respond(res, message) {
   res.set("Content-Type", "text/xml");
   res.send(`
     <Response>
