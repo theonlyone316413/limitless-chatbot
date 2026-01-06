@@ -1,90 +1,170 @@
-// Rangos base en MXN (ajusta a tu mercado)
-export const priceRules = {
-  lona: ({ areaM2 }) => {
-    const options = {
-      basic13oz: {
-        label: "Lona 13 oz (económica)",
-        minM2: 120,
-        maxM2: 180,
-        description: "Ideal para fachadas y promociones estándar."
-      },
-      premium18oz: {
-        label: "Lona 18 oz (alta resistencia)",
-        minM2: 180,
-        maxM2: 260,
-        description: "Mayor durabilidad, recomendada para exteriores prolongados."
+import express from "express";
+import twilio from "twilio";
+
+import { getState, saveState } from "../memory/stateManager.js";
+import { detectService } from "../services/serviceDetector.js";
+import { serviceSteps } from "../services/serviceSteps.js";
+import { priceRules } from "../pricing/priceRules.js";
+
+const router = express.Router();
+const MessagingResponse = twilio.twiml.MessagingResponse;
+
+const GREETINGS = ["hola", "hola!", "buenas", "hey", "hello", "hi"];
+const PRICE_INTENT = [
+  "cuanto cuesta",
+  "cuánto cuesta",
+  "cuanto me cuesta",
+  "cuánto me cuesta",
+  "precio",
+  "costo",
+  "vale"
+];
+
+// 🔧 helper seguro para medidas tipo "3 x 1.5"
+function extractMeasures(text) {
+  const match = text.match(/(\d+(\.\d+)?)\s*[xX*]\s*(\d+(\.\d+)?)/);
+  if (!match) return null;
+  return {
+    ancho: parseFloat(match[1]),
+    alto: parseFloat(match[3])
+  };
+}
+
+router.post("/", async (req, res) => {
+  const twiml = new MessagingResponse();
+
+  try {
+    const from = req.body.From;
+    const incomingMsg = (req.body.Body || "").trim();
+    const lowerMsg = incomingMsg.toLowerCase();
+
+    let state = (await getState(from)) || {};
+    state.answers = state.answers || {};
+
+    const isGreeting = GREETINGS.includes(lowerMsg);
+    const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
+
+    // =============================
+    // 👋 SALUDO HUMANO
+    // =============================
+    if (isGreeting && !state.service) {
+      twiml.message(
+        "¡Hola! 👋 Cuéntame, ¿qué necesitas cotizar hoy? Puedo ayudarte con lonas, vinil, toldos y rótulos."
+      );
+      res.type("text/xml");
+      return res.send(twiml.toString());
+    }
+
+    // =============================
+    // 📐 EXTRAER MEDIDAS SI VIENEN EN EL TEXTO
+    // =============================
+    const measures = extractMeasures(lowerMsg);
+    if (measures) {
+      state.answers.ancho = measures.ancho;
+      state.answers.alto = measures.alto;
+      await saveState(from, state);
+    }
+
+    // =============================
+    // 💰 INTENCIÓN DE PRECIO (LONA)
+    // =============================
+    if (wantsPrice && state.service === "lona") {
+      const { ancho, alto, uso } = state.answers;
+
+      if (ancho && alto && uso) {
+        const areaM2 = ancho * alto;
+        const pricing = priceRules.lona({ areaM2 });
+
+        const reply =
+          `💰 *Opciones para tu lona (${areaM2.toFixed(2)} m²)*\n\n` +
+          `🟢 *Lona 13 oz (la más usada)*\n` +
+          `$${pricing.options["13oz"].min} – $${pricing.options["13oz"].max} MXN\n` +
+          `${pricing.options["13oz"].notes}\n\n` +
+          `🔵 *Lona 18 oz (más resistente)*\n` +
+          `$${pricing.options["18oz"].min} – $${pricing.options["18oz"].max} MXN\n` +
+          `${pricing.options["18oz"].notes}\n\n` +
+          `👉 ¿Cuál opción te gustaría cotizar?`;
+
+        await saveState(from, {});
+        twiml.message(reply);
+        res.type("text/xml");
+        return res.send(twiml.toString());
       }
-    };
 
-    return {
-      options: {
-        "13oz": {
-          label: options.basic13oz.label,
-          min: Math.round(options.basic13oz.minM2 * areaM2),
-          max: Math.round(options.basic13oz.maxM2 * areaM2),
-          notes: options.basic13oz.description
-        },
-        "18oz": {
-          label: options.premium18oz.label,
-          min: Math.round(options.premium18oz.minM2 * areaM2),
-          max: Math.round(options.premium18oz.maxM2 * areaM2),
-          notes: options.premium18oz.description
-        }
-      },
-      commonNotes:
-        "Incluye impresión alta resolución. Ojillos y refuerzo perimetral se cotizan según necesidad."
-    };
-  },
-  
-  toldo: ({ areaM2, tipo }) => {
-    const base =
-      tipo === "fijo"
-        ? { min: 1200, max: 2200 }
-        : { min: 700, max: 1300 };
+      if (!uso) {
+        twiml.message(
+          "¿La lona sería para fachada, evento o promoción temporal?"
+        );
+        res.type("text/xml");
+        return res.send(twiml.toString());
+      }
 
-    return {
-      min: Math.round(base.min * areaM2),
-      max: Math.round(base.max * areaM2),
-      notes: "Estructura y anclajes pueden modificar el rango.",
-    };
-  },
+      if (!ancho || !alto) {
+        twiml.message(
+          "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 3 x 1.5)"
+        );
+        res.type("text/xml");
+        return res.send(twiml.toString());
+      }
+    }
 
-  rotulacion: ({ alcance }) => {
-    const map = {
-      parcial: { min: 2500, max: 6000 },
-      completa: { min: 9000, max: 18000 },
-      flotilla: { min: 2200, max: 5200 },
-    };
+    // =============================
+    // 1️⃣ DETECTAR SERVICIO
+    // =============================
+    if (!state.service) {
+      const detected = detectService(incomingMsg);
 
-    return map[alcance] || { min: 3000, max: 8000 };
-  },
+      if (detected && serviceSteps[detected.service]) {
+        state.service = detected.service;
+        state.stepIndex = 0;
+        await saveState(from, state);
 
-  letrero: ({ tipo }) => {
-    const map = {
-      lona: { min: 1800, max: 4500 },
-      caja: { min: 4200, max: 9800 },
-      letras: { min: 6500, max: 16000 },
-    };
-    return map[tipo] || { min: 2500, max: 7000 };
-  },
+        twiml.message(serviceSteps[state.service][0].question);
+        res.type("text/xml");
+        return res.send(twiml.toString());
+      }
 
-  stickers: ({ cantidad }) => {
-    if (cantidad >= 1000) return { min: 900, max: 1800 };
-    if (cantidad >= 500) return { min: 600, max: 1200 };
-    return { min: 300, max: 700 };
-  },
+      twiml.message(
+        "Perfecto 👍 dime un poco más sobre lo que necesitas."
+      );
+      res.type("text/xml");
+      return res.send(twiml.toString());
+    }
 
-  estampados: ({ cantidad }) => {
-    if (cantidad >= 50) return { min: 250, max: 420 };
-    if (cantidad >= 10) return { min: 300, max: 520 };
-    return { min: 350, max: 650 };
-  },
+    // =============================
+    // 2️⃣ FLUJO NORMAL
+    // =============================
+    const steps = serviceSteps[state.service];
+    const step = steps[state.stepIndex];
 
-  polarizado: ({ tipo }) => {
-    const map = {
-      vehiculo: { min: 1800, max: 4200 },
-      local: { min: 1200, max: 3800 },
-    };
-    return map[tipo] || { min: 1500, max: 4000 };
-  },
-};
+    if (!step) {
+      await saveState(from, {});
+      twiml.message(
+        "Perfecto 👍 ¿Deseas que te prepare la cotización formal?"
+      );
+      res.type("text/xml");
+      return res.send(twiml.toString());
+    }
+
+    state.answers[step.key] = incomingMsg;
+    state.stepIndex += 1;
+    await saveState(from, state);
+
+    twiml.message(
+      steps[state.stepIndex]?.question ||
+        "Perfecto 👍 dime si deseas cotización formal o agregar instalación."
+    );
+    res.type("text/xml");
+    return res.send(twiml.toString());
+
+  } catch (error) {
+    console.error("❌ CHAT ERROR:", error);
+    twiml.message(
+      "Ocurrió un error 🙏 intentemos nuevamente."
+    );
+    res.type("text/xml");
+    return res.send(twiml.toString());
+  }
+});
+
+export default router;
