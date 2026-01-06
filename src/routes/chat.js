@@ -9,7 +9,7 @@ const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 // =============================
-// SALUDOS
+// CONSTANTES
 // =============================
 const GREETINGS = [
   "hola",
@@ -22,9 +22,6 @@ const GREETINGS = [
   "hi",
 ];
 
-// =============================
-// INTENCIÓN DE PRECIO
-// =============================
 const PRICE_INTENT = [
   "cuanto cuesta",
   "cuánto cuesta",
@@ -53,7 +50,7 @@ router.post("/", async (req, res) => {
     const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
 
     // =============================
-    // 🔄 SALUDO SIEMPRE TIENE PRIORIDAD
+    // 🔄 SALUDO (SIEMPRE PRIORIDAD)
     // =============================
     if (isGreeting) {
       const cleanState = {};
@@ -69,43 +66,6 @@ router.post("/", async (req, res) => {
     }
 
     // =============================
-    // 💰 INTENCIÓN DE PRECIO PRIORITARIA
-    // =============================
-    if (wantsPrice && state.service === "lona") {
-      const { ancho, alto, uso } = state.answers;
-
-      if (ancho && alto && uso) {
-        return send(
-          res,
-          twiml,
-          "Perfecto 👍 Ya tengo las medidas y el uso. En un momento te doy el precio.",
-          from,
-          state
-        );
-      }
-
-      if (!uso) {
-        return send(
-          res,
-          twiml,
-          "¿La lona sería para fachada, evento o promoción temporal?",
-          from,
-          state
-        );
-      }
-
-      if (!ancho || !alto) {
-        return send(
-          res,
-          twiml,
-          "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 3 x 1.5)",
-          from,
-          state
-        );
-      }
-    }
-
-    // =============================
     // 1️⃣ DETECTAR SERVICIO
     // =============================
     if (!state.service) {
@@ -114,7 +74,8 @@ router.post("/", async (req, res) => {
       if (
         detected &&
         detected.service &&
-        serviceSteps[detected.service]
+        serviceSteps[detected.service] &&
+        serviceSteps[detected.service].length
       ) {
         state.service = detected.service;
         state.stepIndex = 0;
@@ -135,6 +96,41 @@ router.post("/", async (req, res) => {
         res,
         twiml,
         "Perfecto 👍 dime un poco más sobre lo que necesitas.",
+        from,
+        state
+      );
+    }
+
+    // =============================
+    // 💰 INTENCIÓN DE PRECIO (SIN ROMPER FLUJO)
+    // =============================
+    if (wantsPrice && state.service === "lona") {
+      const { ancho, alto, uso } = state.answers;
+
+      if (!uso) {
+        return send(
+          res,
+          twiml,
+          "¿La lona sería para fachada, evento o promoción temporal?",
+          from,
+          state
+        );
+      }
+
+      if (!ancho || !alto) {
+        return send(
+          res,
+          twiml,
+          "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 3 x 1.5)",
+          from,
+          state
+        );
+      }
+
+      return send(
+        res,
+        twiml,
+        "Perfecto 👍 Ya tengo la información. En el siguiente mensaje te doy el precio.",
         from,
         state
       );
@@ -188,7 +184,6 @@ router.post("/", async (req, res) => {
       );
     }
 
-    // cierre final
     await saveState(from, {});
     return send(
       res,
@@ -211,7 +206,7 @@ router.post("/", async (req, res) => {
 });
 
 // =============================
-// 🔒 ENVÍO SIMPLE Y SEGURO
+// ENVÍO SIMPLE (UN SOLO HELPER)
 // =============================
 function send(res, twiml, message, from, state) {
   twiml.message(message);
