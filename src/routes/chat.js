@@ -8,14 +8,37 @@ import { serviceSteps } from "../services/serviceSteps.js";
 const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
+// saludos humanos
+const GREETINGS = [
+  "hola",
+  "hola!",
+  "buenas",
+  "buenos dias",
+  "buenos días",
+  "hey",
+  "hello",
+  "hi"
+];
+
 router.post("/", async (req, res) => {
   const twiml = new MessagingResponse();
 
   try {
     const from = req.body.From;
     const incomingMsg = (req.body.Body || "").trim();
+    const lowerMsg = incomingMsg.toLowerCase();
 
     let state = (await getState(from)) || {};
+
+    // =============================
+    // 👋 SALUDO HUMANO
+    // =============================
+    if (GREETINGS.includes(lowerMsg) && !state.service) {
+      const reply =
+        "¡Hola! 👋 Cuéntame, ¿qué necesitas cotizar hoy? Puedo ayudarte con lonas, vinil, toldos, rótulos y más.";
+
+      return sendOnce(res, twiml, reply, from, state);
+    }
 
     // =============================
     // 1️⃣ DETECTAR SERVICIO
@@ -27,82 +50,115 @@ router.post("/", async (req, res) => {
         state.service = detected.service;
         state.stepIndex = 0;
         state.answers = {};
+        state.lastReply = null;
 
         await saveState(from, state);
 
-        twiml.message(
-          serviceSteps[state.service][0].question
+        return sendOnce(
+          res,
+          twiml,
+          serviceSteps[state.service][0].question,
+          from,
+          state
         );
-
-        return sendTwiml(res, twiml);
       }
 
-      twiml.message(
-        "Perfecto 👍 dime un poco más sobre lo que necesitas."
+      return sendOnce(
+        res,
+        twiml,
+        "Perfecto 👍 dime un poco más sobre lo que necesitas.",
+        from,
+        state
       );
-      return sendTwiml(res, twiml);
     }
 
     // =============================
-    // 2️⃣ FLUJO POR STEPS
+    // 2️⃣ FLUJO POR PASOS
     // =============================
     const steps = serviceSteps[state.service];
 
     if (!steps) {
       await saveState(from, {});
-      twiml.message(
-        "Reiniciemos 😊 ¿qué tipo de servicio estás buscando?"
+      return sendOnce(
+        res,
+        twiml,
+        "Empecemos de nuevo 😊 ¿qué servicio estás buscando?",
+        from,
+        {}
       );
-      return sendTwiml(res, twiml);
     }
 
     const currentStep = steps[state.stepIndex];
 
     if (!currentStep) {
       await saveState(from, {});
-      twiml.message(
-        "Excelente 👍 Con esta información puedo prepararte una propuesta completa."
+      return sendOnce(
+        res,
+        twiml,
+        "Excelente 👍 Con esta información puedo prepararte una propuesta completa.",
+        from,
+        {}
       );
-      return sendTwiml(res, twiml);
     }
 
-    // Guardar respuesta
+    // Guardar respuesta del usuario
     state.answers = state.answers || {};
     state.answers[currentStep.key] = incomingMsg;
-
-    // Avanzar step
     state.stepIndex += 1;
+
     await saveState(from, state);
 
     // =============================
     // 3️⃣ SIGUIENTE PASO O CIERRE
     // =============================
     if (state.stepIndex < steps.length) {
-      twiml.message(
-        steps[state.stepIndex].question
+      return sendOnce(
+        res,
+        twiml,
+        steps[state.stepIndex].question,
+        from,
+        state
       );
-      return sendTwiml(res, twiml);
     }
 
+    // cierre final
     await saveState(from, {});
-    twiml.message(
-      "Excelente 👍 Con esta información puedo recomendarte materiales y rangos de precio según tu proyecto."
+    return sendOnce(
+      res,
+      twiml,
+      "Perfecto 👍 Con esto puedo recomendarte materiales, precios y tiempos de entrega.",
+      from,
+      {}
     );
-    return sendTwiml(res, twiml);
 
   } catch (error) {
     console.error("❌ CHAT ERROR:", error);
-    twiml.message(
-      "Ocurrió un error 🙏 intentemos nuevamente."
+    return sendOnce(
+      res,
+      twiml,
+      "Ocurrió un error 🙏 intentemos nuevamente.",
+      null,
+      {}
     );
-    return sendTwiml(res, twiml);
   }
 });
 
 // =============================
-// 🔒 RESPUESTA SEGURA TWILIO
+// 🔒 ENVÍO SEGURO (NO REPITE)
 // =============================
-function sendTwiml(res, twiml) {
+async function sendOnce(res, twiml, message, from, state) {
+  if (state?.lastReply === message) {
+    res.type("text/xml");
+    return res.send(twiml.toString());
+  }
+
+  twiml.message(message);
+
+  if (from) {
+    state.lastReply = message;
+    await saveState(from, state);
+  }
+
   res.type("text/xml");
   return res.send(twiml.toString());
 }
