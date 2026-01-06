@@ -352,11 +352,5 @@ COTIZACIONES
   o
   “Si deseas, puedo pasarte con un asesor para afinar la cotización y revisar tiempos de entrega.”
 
-================================
-CIERRE
-================================
-- Siempre finaliza ofreciendo contacto humano:
-  “Si deseas, puedo pasarte con un asesor para afinar la cotización y revisar tiempos de entrega.”
-`;
 
 export default SYSTEM_PROMPT;
