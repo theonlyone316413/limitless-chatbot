@@ -8,7 +8,9 @@ import { serviceSteps } from "../services/serviceSteps.js";
 const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
-// saludos humanos
+// =============================
+// SALUDOS
+// =============================
 const GREETINGS = [
   "hola",
   "hola!",
@@ -17,17 +19,13 @@ const GREETINGS = [
   "buenos días",
   "hey",
   "hello",
-  "hi"
+  "hi",
 ];
 
-router.post("/", async (req, res) => {
-  const twiml = new MessagingResponse();
-
-  try {
-    const from = req.body.From;
-    const incomingMsg = (req.body.Body || "").trim();
-    const lowerMsg = incomingMsg.toLowerCase();
-    const PRICE_INTENT = [
+// =============================
+// INTENCIÓN DE PRECIO
+// =============================
+const PRICE_INTENT = [
   "cuanto cuesta",
   "cuánto cuesta",
   "precio",
@@ -37,74 +35,94 @@ router.post("/", async (req, res) => {
   "vale",
 ];
 
-const wantsPrice = PRICE_INTENT.some(p =>
-  lowerMsg.includes(p)
-);
-// 🔄 SALUDO SIEMPRE TIENE PRIORIDAD (ÚNICO)
-if (isGreeting) {
-  const cleanState = {};
-  await saveState(from, cleanState);
+router.post("/", async (req, res) => {
+  const twiml = new MessagingResponse();
 
-  const reply =
-    "¡Hola! 👋 ¿Qué te gustaría cotizar hoy? Puedo ayudarte con lonas, vinil, toldos, rótulos y más.";
+  try {
+    const from = req.body.From;
+    const incomingMsg = (req.body.Body || "").trim();
+    const lowerMsg = incomingMsg.toLowerCase();
 
-  return send(res, twiml, reply, from, cleanState);
-}
-    // 💰 INTENCIÓN DE PRECIO TIENE PRIORIDAD
-if (wantsPrice && state.service === "lona") {
-  const { ancho, alto, uso } = state.answers || {};
+    // =============================
+    // CARGAR ESTADO
+    // =============================
+    let state = (await getState(from)) || {};
+    state.answers = state.answers || {};
 
-  // Si ya tengo todo, NO pregunto más: cotizo
-  if (ancho && alto && uso) {
-    return send(
-      res,
-      twiml,
-      "Perfecto 👍 Ya tengo las medidas y el uso. En un momento te doy el precio.",
-      from,
-      state
-    );
-  }
+    const isGreeting = GREETINGS.includes(lowerMsg);
+    const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
 
-  // Si falta algo, pido SOLO lo que falta
-  if (!uso) {
-    return send(
-      res,
-      twiml,
-      "¿La lona sería para fachada, evento o promoción temporal?",
-      from,
-      state
-    );
-  }
+    // =============================
+    // 🔄 SALUDO SIEMPRE TIENE PRIORIDAD
+    // =============================
+    if (isGreeting) {
+      const cleanState = {};
+      await saveState(from, cleanState);
 
-  if (!ancho || !alto) {
-    return send(
-      res,
-      twiml,
-      "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 3 x 1.5)",
-      from,
-      state
-    );
-  }
-}
+      return send(
+        res,
+        twiml,
+        "¡Hola! 👋 ¿Qué te gustaría cotizar hoy? Puedo ayudarte con lonas, vinil, toldos, rótulos y más.",
+        from,
+        cleanState
+      );
+    }
 
+    // =============================
+    // 💰 INTENCIÓN DE PRECIO PRIORITARIA
+    // =============================
+    if (wantsPrice && state.service === "lona") {
+      const { ancho, alto, uso } = state.answers;
+
+      if (ancho && alto && uso) {
+        return send(
+          res,
+          twiml,
+          "Perfecto 👍 Ya tengo las medidas y el uso. En un momento te doy el precio.",
+          from,
+          state
+        );
+      }
+
+      if (!uso) {
+        return send(
+          res,
+          twiml,
+          "¿La lona sería para fachada, evento o promoción temporal?",
+          from,
+          state
+        );
+      }
+
+      if (!ancho || !alto) {
+        return send(
+          res,
+          twiml,
+          "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 3 x 1.5)",
+          from,
+          state
+        );
+      }
+    }
 
     // =============================
     // 1️⃣ DETECTAR SERVICIO
     // =============================
-        let state = (await getState(from)) || {};
-state.answers = state.answers || {};
     if (!state.service) {
       const detected = detectService(incomingMsg);
 
-      if (detected && serviceSteps[detected.service]) {
+      if (
+        detected &&
+        detected.service &&
+        serviceSteps[detected.service]
+      ) {
         state.service = detected.service;
         state.stepIndex = 0;
         state.answers = {};
-        state.lastReply = null;
 
         await saveState(from, state);
 
-        return sendOnce(
+        return send(
           res,
           twiml,
           serviceSteps[state.service][0].question,
@@ -113,7 +131,7 @@ state.answers = state.answers || {};
         );
       }
 
-      return sendOnce(
+      return send(
         res,
         twiml,
         "Perfecto 👍 dime un poco más sobre lo que necesitas.",
@@ -129,7 +147,7 @@ state.answers = state.answers || {};
 
     if (!steps) {
       await saveState(from, {});
-      return sendOnce(
+      return send(
         res,
         twiml,
         "Empecemos de nuevo 😊 ¿qué servicio estás buscando?",
@@ -142,7 +160,7 @@ state.answers = state.answers || {};
 
     if (!currentStep) {
       await saveState(from, {});
-      return sendOnce(
+      return send(
         res,
         twiml,
         "Excelente 👍 Con esta información puedo prepararte una propuesta completa.",
@@ -151,8 +169,7 @@ state.answers = state.answers || {};
       );
     }
 
-    // Guardar respuesta del usuario
-    state.answers = state.answers || {};
+    // Guardar respuesta
     state.answers[currentStep.key] = incomingMsg;
     state.stepIndex += 1;
 
@@ -162,7 +179,7 @@ state.answers = state.answers || {};
     // 3️⃣ SIGUIENTE PASO O CIERRE
     // =============================
     if (state.stepIndex < steps.length) {
-      return sendOnce(
+      return send(
         res,
         twiml,
         steps[state.stepIndex].question,
@@ -173,7 +190,7 @@ state.answers = state.answers || {};
 
     // cierre final
     await saveState(from, {});
-    return sendOnce(
+    return send(
       res,
       twiml,
       "Perfecto 👍 Con esto puedo recomendarte materiales, precios y tiempos de entrega.",
@@ -183,7 +200,7 @@ state.answers = state.answers || {};
 
   } catch (error) {
     console.error("❌ CHAT ERROR:", error);
-    return sendOnce(
+    return send(
       res,
       twiml,
       "Ocurrió un error 🙏 intentemos nuevamente.",
@@ -194,21 +211,11 @@ state.answers = state.answers || {};
 });
 
 // =============================
-// 🔒 ENVÍO SEGURO (NO REPITE)
+// 🔒 ENVÍO SIMPLE Y SEGURO
 // =============================
-async function sendOnce(res, twiml, message, from, state) {
-  if (state?.lastReply === message) {
-    res.type("text/xml");
-    return res.send(twiml.toString());
-  }
-
+function send(res, twiml, message, from, state) {
   twiml.message(message);
-
-  if (from) {
-    state.lastReply = message;
-    await saveState(from, state);
-  }
-
+  if (from) saveState(from, state);
   res.type("text/xml");
   return res.send(twiml.toString());
 }
