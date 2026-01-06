@@ -40,22 +40,59 @@ router.post("/", async (req, res) => {
 const wantsPrice = PRICE_INTENT.some(p =>
   lowerMsg.includes(p)
 );
+// 🔄 SALUDO SIEMPRE TIENE PRIORIDAD (ÚNICO)
+if (isGreeting) {
+  const cleanState = {};
+  await saveState(from, cleanState);
 
-    let state = (await getState(from)) || {};
+  const reply =
+    "¡Hola! 👋 ¿Qué te gustaría cotizar hoy? Puedo ayudarte con lonas, vinil, toldos, rótulos y más.";
 
-    // =============================
-    // 👋 SALUDO HUMANO
-    // =============================
-    if (GREETINGS.includes(lowerMsg) && !state.service) {
-      const reply =
-        "¡Hola! 👋 Cuéntame, ¿qué necesitas cotizar hoy? Puedo ayudarte con lonas, vinil, toldos, rótulos y más.";
+  return send(res, twiml, reply, from, cleanState);
+}
+    // 💰 INTENCIÓN DE PRECIO TIENE PRIORIDAD
+if (wantsPrice && state.service === "lona") {
+  const { ancho, alto, uso } = state.answers || {};
 
-      return sendOnce(res, twiml, reply, from, state);
-    }
+  // Si ya tengo todo, NO pregunto más: cotizo
+  if (ancho && alto && uso) {
+    return send(
+      res,
+      twiml,
+      "Perfecto 👍 Ya tengo las medidas y el uso. En un momento te doy el precio.",
+      from,
+      state
+    );
+  }
+
+  // Si falta algo, pido SOLO lo que falta
+  if (!uso) {
+    return send(
+      res,
+      twiml,
+      "¿La lona sería para fachada, evento o promoción temporal?",
+      from,
+      state
+    );
+  }
+
+  if (!ancho || !alto) {
+    return send(
+      res,
+      twiml,
+      "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 3 x 1.5)",
+      from,
+      state
+    );
+  }
+}
+
 
     // =============================
     // 1️⃣ DETECTAR SERVICIO
     // =============================
+        let state = (await getState(from)) || {};
+state.answers = state.answers || {};
     if (!state.service) {
       const detected = detectService(incomingMsg);
 
