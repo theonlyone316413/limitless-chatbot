@@ -1,60 +1,175 @@
-import redis from "../utils/redisClient.js";
+import express from "express";
+import twilio from "twilio";
 
-const TTL = 60 * 60 * 24 * 7; // 7 días de memoria por cliente
+import { getState, saveState } from "../memory/stateManager.js";
+import { detectService } from "../services/serviceDetector.js";
+import { serviceSteps } from "../services/serviceSteps.js";
+import { priceRules } from "../pricing/priceRules.js";
 
-/**
- * Obtiene el estado del cliente desde Redis
- */
-export async function getState(from) {
-  if (!from) return {};
+const router = express.Router();
+const MessagingResponse = twilio.twiml.MessagingResponse;
 
-  const raw = await redis.get(from);
-  return raw ? JSON.parse(raw) : {};
-}
+const GREETINGS = ["hola", "hola!", "buenas", "hey", "hello", "hi"];
+const PRICE_INTENT = [
+  "cuanto cuesta",
+  "cuánto cuesta",
+  "cuanto me cuesta",
+  "cuánto me cuesta",
+  "precio",
+  "costo",
+  "vale"
+];
 
-/**
- * Guarda el estado del cliente en Redis
- */
-export async function saveState(from, state) {
-  if (!from) return;
+router.post("/", async (req, res) => {
+  const twiml = new MessagingResponse();
 
-  const safeState = {
-    ...state,
-    last_seen: new Date().toISOString(),
-  };
+  try {
+    const from = req.body.From;
+    const incomingMsg = (req.body.Body || "").trim();
+    const lowerMsg = incomingMsg.toLowerCase();
 
-  await redis.set(from, JSON.stringify(safeState), "EX", TTL);
-}
+    let state = (await getState(from)) || {};
+    state.answers = state.answers || {};
 
-/**
- * Avanza el paso actual del flujo (medidas, material, etc.)
- */
-export function advanceStep(state, nextStep) {
-  return {
-    ...state,
-    step: nextStep,
-  };
-}
+    const isGreeting = GREETINGS.includes(lowerMsg);
+    const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
 
-/**
- * Detecta idioma base (simple, rápido y suficiente)
- */
-export function detectLanguage(text = "") {
-  const lower = text.toLowerCase();
+    // =============================
+    // 👋 SALUDO HUMANO (solo una vez)
+    // =============================
+    if (isGreeting && !state.service) {
+      const reply =
+        "¡Hola! 👋 Cuéntame, ¿qué necesitas cotizar hoy? Puedo ayudarte con lonas, vinil, toldos y rótulos.";
+      return send(res, twiml, reply, from, state);
+    }
 
-  // Si contiene palabras o estructuras comunes en inglés
-  if (
-    lower.includes("hello") ||
-    lower.includes("hi") ||
-    lower.includes("price") ||
-    lower.includes("quote") ||
-    lower.includes("need") ||
-    lower.includes("banner") ||
-    lower.includes("sign")
-  ) {
-    return "en";
+    // =============================
+    // 💰 INTENCIÓN DE PRECIO (ANTES DEL FLUJO)
+    // =============================
+    if (wantsPrice && state.service === "lona") {
+      const { ancho, alto, uso } = state.answers;
+
+      // Si ya tengo todo → COTIZO
+      if (ancho && alto && uso) {
+        const areaM2 = parseFloat(ancho) * parseFloat(alto);
+        const pricing = priceRules.lona({ areaM2 });
+
+        const reply =
+          `💰 *Opciones para tu lona (${areaM2.toFixed(2)} m²)*\n\n` +
+          `🟢 *Lona 13 oz (la más usada)*\n` +
+          `$${pricing.options["13oz"].min} – $${pricing.options["13oz"].max} MXN\n` +
+          `${pricing.options["13oz"].notes}\n\n` +
+          `🔵 *Lona 18 oz (más resistente)*\n` +
+          `$${pricing.options["18oz"].min} – $${pricing.options["18oz"].max} MXN\n` +
+          `${pricing.options["18oz"].notes}\n\n` +
+          `👉 ¿Cuál opción te gustaría cotizar?`;
+
+        await saveState(from, {});
+        return send(res, twiml, reply, from, {});
+      }
+
+      // Si falta algo → pedir SOLO lo que falta
+      if (!uso) {
+        return send(
+          res,
+          twiml,
+          "¿La lona sería para fachada, evento o promoción temporal?",
+          from,
+          state
+        );
+      }
+
+      if (!ancho || !alto) {
+        return send(
+          res,
+          twiml,
+          "¿Cuáles son las medidas aproximadas de la lona?",
+          from,
+          state
+        );
+      }
+    }
+
+    // =============================
+    // 1️⃣ DETECTAR SERVICIO
+    // =============================
+    if (!state.service) {
+      const detected = detectService(incomingMsg);
+
+      if (detected && serviceSteps[detected.service]) {
+        state.service = detected.service;
+        state.stepIndex = 0;
+        await saveState(from, state);
+
+        return send(
+          res,
+          twiml,
+          serviceSteps[state.service][0].question,
+          from,
+          state
+        );
+      }
+
+      return send(
+        res,
+        twiml,
+        "Perfecto 👍 dime un poco más sobre lo que necesitas.",
+        from,
+        state
+      );
+    }
+
+    // =============================
+    // 2️⃣ FLUJO POR PASOS
+    // =============================
+    const steps = serviceSteps[state.service];
+    const step = steps[state.stepIndex];
+
+    if (!step) {
+      await saveState(from, {});
+      return send(
+        res,
+        twiml,
+        "Perfecto 👍 ¿Deseas que te prepare la cotización formal?",
+        from,
+        {}
+      );
+    }
+
+    // Guardar respuesta
+    state.answers[step.key] = incomingMsg;
+    state.stepIndex += 1;
+    await saveState(from, state);
+
+    return send(
+      res,
+      twiml,
+      steps[state.stepIndex]?.question ||
+        "Perfecto 👍 dime si deseas cotización formal o agregar instalación.",
+      from,
+      state
+    );
+
+  } catch (error) {
+    console.error("❌ CHAT ERROR:", error);
+    return send(
+      res,
+      twiml,
+      "Ocurrió un error 🙏 intentemos nuevamente.",
+      null,
+      {}
+    );
   }
+});
 
-  // Default español
-  return "es";
+// =============================
+// 🔒 ENVÍO ÚNICO
+// =============================
+function send(res, twiml, message, from, state) {
+  twiml.message(message);
+  if (from) saveState(from, state);
+  res.type("text/xml");
+  return res.send(twiml.toString());
 }
+
+export default router;
