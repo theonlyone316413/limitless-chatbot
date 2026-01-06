@@ -1,68 +1,99 @@
+// src/services/serviceDetector.js
+
 export function detectService(text = "") {
-  const msg = text.toLowerCase();
+  const msg = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, ""); // quita acentos
 
-  // LONAS / BANNERS
-  if (
-    msg.includes("lona") ||
-    msg.includes("banner") ||
-    msg.includes("impresion") ||
-    msg.includes("impresión")
-  ) {
-    return { service: "lona" };
+  // ======================
+  // LONAS
+  // ======================
+  if (msg.includes("lona") || msg.includes("banner")) {
+    return {
+      service: "lona",
+      step: "uso", // ⚠️ ESTE STEP DEBE EXISTIR EN serviceSteps
+    };
   }
 
+  // ======================
   // TOLDOS
+  // ======================
   if (msg.includes("toldo") || msg.includes("canopy")) {
-    return { service: "toldo" };
+    return {
+      service: "toldo",
+      step: "tipo",
+    };
   }
 
+  // ======================
   // ROTULACIÓN VEHICULAR
+  // ======================
   if (
     msg.includes("rotul") ||
     msg.includes("vinil") ||
     msg.includes("vehiculo") ||
-    msg.includes("vehículo") ||
     msg.includes("carro") ||
     msg.includes("camioneta")
   ) {
-    return { service: "rotulacion" };
+    return {
+      service: "rotulacion",
+      step: "tipo_vehiculo",
+    };
   }
 
-  // LETREROS / CAJAS LUMINOSAS / LETRAS 3D
+  // ======================
+  // LETREROS / CAJAS
+  // ======================
   if (
     msg.includes("letrero") ||
-    msg.includes("caja luminosa") ||
-    msg.includes("letras 3d") ||
+    msg.includes("caja") ||
+    msg.includes("luminosa") ||
     msg.includes("letras")
   ) {
-    return { service: "letrero" };
+    return {
+      service: "letrero",
+      step: "ubicacion",
+    };
   }
 
-  // STICKERS / CALCOMANÍAS
+  // ======================
+  // STICKERS
+  // ======================
   if (
     msg.includes("sticker") ||
-    msg.includes("stickers") ||
     msg.includes("calcomania") ||
-    msg.includes("calcomanía") ||
     msg.includes("etiqueta")
   ) {
-    return { service: "stickers" };
+    return {
+      service: "stickers",
+      step: "cantidad",
+    };
   }
 
+  // ======================
   // ESTAMPADOS
+  // ======================
   if (
     msg.includes("playera") ||
-    msg.includes("playeras") ||
+    msg.includes("camiseta") ||
     msg.includes("taza") ||
-    msg.includes("tazas") ||
     msg.includes("estampado")
   ) {
-    return { service: "estampados" };
+    return {
+      service: "estampados",
+      step: "producto",
+    };
   }
 
+  // ======================
   // POLARIZADO
+  // ======================
   if (msg.includes("polarizado")) {
-    return { service: "polarizado" };
+    return {
+      service: "polarizado",
+      step: "tipo",
+    };
   }
 
   return null;
