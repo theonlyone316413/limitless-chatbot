@@ -74,3 +74,42 @@ export const serviceSteps = {
     },
     {
       key: "ubicacion",
+      question:
+        "Gracias. ¿El letrero sería para interior o fachada exterior?"
+    },
+    {
+      key: "cierre",
+      question:
+        "Excelente 💡 Podemos trabajar iluminación LED de bajo consumo con materiales resistentes para alta visibilidad profesional, incluso de noche."
+    }
+  ],
+
+  // ======================
+  // STICKERS
+  // ======================
+  stickers: [
+    {
+      key: "cantidad",
+      question:
+        "Perfecto 👍 ¿Qué cantidad aproximada de stickers necesitas?"
+    },
+    {
+      key: "tamano",
+      question:
+        "Gracias. ¿Qué tamaño aproximado te gustaría para los stickers?"
+    },
+    {
+      key: "cierre",
+      question:
+        "Excelente 💪 Podemos producir stickers en vinil resistente al agua y al sol, con corte personalizado y excelente definición."
+    }
+  ],
+
+  // ======================
+  // ESTAMPADOS
+  // ======================
+  estampados: [
+    {
+      key: "producto",
+      question:
+        "Perfecto 👍 ¿Buscas estampado en playeras,
