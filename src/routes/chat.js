@@ -1,6 +1,9 @@
+
 import express from "express";
 import { getState, saveState } from "../memory/stateManager.js";
 import { detectService } from "../services/serviceDetector.js";
+console.log("🚨🚨🚨 CHAT.JS NUEVO — VERSION FINAL 🚨🚨🚨");
+
 
 const router = express.Router();
 
