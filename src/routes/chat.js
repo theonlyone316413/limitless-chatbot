@@ -4,111 +4,85 @@ import { detectService } from "../services/serviceDetector.js";
 
 const router = express.Router();
 
-/**
- * Webhook principal para WhatsApp (Twilio)
- */
+// ===============================
+// WEBHOOK PRINCIPAL (TWILIO)
+// ===============================
 router.post("/", async (req, res) => {
   try {
     const from = req.body.From;
-    const incomingMsg = (req.body.Body || "").trim();
+    const msg = (req.body.Body || "").trim().toLowerCase();
 
-    // Recuperar estado del usuario
     let state = await getState(from);
+    if (!state) state = {};
 
     // ===============================
-    // 1️⃣ PRIMER MENSAJE (SIN ASESOR)
-    // ===============================
-    if (!state) {
-      await saveState(from, {
-        step: "INIT",
-        lastMessage: incomingMsg,
-        updatedAt: Date.now(),
-      });
-
-      return twilioReply(
-        res,
-        "¡Hola! ¿En qué puedo ayudarte hoy? ¿Buscas información sobre alguno de nuestros servicios?"
-      );
-    }
-
-    // ===============================
-    // 2️⃣ DETECTAR SERVICIO (si no existe)
+    // 1️⃣ DETECTAR SERVICIO (solo una vez)
     // ===============================
     if (!state.service) {
-      const detected = detectService(incomingMsg);
+      const detected = detectService(msg);
 
       if (detected) {
         state.service = detected.service;
-        state.step = "ASK_MEASURES";
-
+        state.step = "inicio";
         await saveState(from, state);
+      }
+    }
 
-        // ❌ SIN asesor aquí
-        return twilioReply(
-          res,
-          "Perfecto. Para ayudarte mejor, ¿qué medidas aproximadas necesitas para la lona?"
-        );
+    let reply = "Perfecto, cuéntame un poco más para ayudarte mejor.";
+
+    // ===============================
+    // 2️⃣ FLUJO POR SERVICIO
+    // ===============================
+    if (state.service === "lona") {
+      if (state.step === "inicio") {
+        reply =
+          "Perfecto. Para ayudarte mejor, ¿la lona es para fachada, evento o promoción temporal?";
+        state.step = "uso";
       }
 
-      return twilioReply(
-        res,
-        "Entendido. Cuéntame un poco más sobre lo que necesitas y con gusto te ayudo."
-      );
+      else if (state.step === "uso") {
+        reply =
+          "Gracias. ¿Podrías compartirme las medidas aproximadas de la lona?";
+        state.step = "medidas";
+      }
+
+      else if (state.step === "medidas") {
+        reply =
+          "Excelente. ¿Ya cuentas con diseño o logotipo, o prefieres algo sencillo?";
+        state.step = "diseno";
+      }
+
+      else if (state.step === "diseno") {
+        reply =
+          "Perfecto. Con esa información puedo ofrecerte opciones profesionales de material y acabado según lo que buscas.";
+        state.step = "listo";
+      }
     }
 
     // ===============================
-    // 3️⃣ FLUJO LONA – PEDIR MEDIDAS
+    // 3️⃣ GUARDAR ESTADO
     // ===============================
-    if (state.service === "lona" && state.step === "ASK_MEASURES") {
-      state.measures = incomingMsg;
-      state.step = "ASK_DESIGN";
-
-      await saveState(from, state);
-
-      return twilioReply(
-        res,
-        "Gracias. ¿Ya cuentas con diseño o logotipo, o prefieres algo sencillo?"
-      );
-    }
+    await saveState(from, state);
 
     // ===============================
-    // 4️⃣ DESPUÉS DE INFO → AHORA SÍ OPCIONAL ASESOR
+    // 4️⃣ RESPUESTA OBLIGATORIA TWILIO
     // ===============================
-    if (state.service === "lona" && state.step === "ASK_DESIGN") {
-      state.design = incomingMsg;
-      state.step = "READY_TO_QUOTE";
+    res.set("Content-Type", "text/xml");
+    res.send(`
+      <Response>
+        <Message>${reply}</Message>
+      </Response>
+    `);
+  } catch (err) {
+    console.error("❌ Error en /chat:", err);
 
-      await saveState(from, state);
-
-      return twilioReply(
-        res,
-        "Excelente. Con esa información puedo orientarte mejor. Si deseas, puedo pasarte con un asesor para afinar materiales, tiempos y cotización."
-      );
-    }
-
-    // ===============================
-    // FALLBACK SEGURO
-    // ===============================
-    return twilioReply(
-      res,
-      "Perfecto, dime un poco más y continuamos."
-    );
-  } catch (error) {
-    console.error("❌ Error en /chat:", error);
-    return twilioReply(res, "Ocurrió un error, intenta nuevamente.");
+    res.set("Content-Type", "text/xml");
+    res.send(`
+      <Response>
+        <Message>Ocurrió un error, intenta nuevamente.</Message>
+      </Response>
+    `);
   }
 });
-
-/**
- * Respuesta Twilio (TwiML)
- */
-function twilioReply(res, message) {
-  res.set("Content-Type", "text/xml");
-  res.send(`
-    <Response>
-      <Message>${message}</Message>
-    </Response>
-  `);
-}
 
 export default router;
