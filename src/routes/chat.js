@@ -5,18 +5,25 @@ import { serviceSteps } from "../services/serviceSteps.js";
 
 const router = express.Router();
 
-console.log("🚨 CHAT.JS ACTIVO — LOGICA POR STEPS");
-
+/**
+ * WhatsApp / Twilio entry point
+ */
 router.post("/", async (req, res) => {
   try {
     const from = req.body.From;
-    const incomingMsg = (req.body.Body || "").trim();
+    const incoming = (req.body.Body || "").trim();
+
+    if (!from || !incoming) {
+      return send(res, "¿Podrías repetir tu mensaje?");
+    }
 
     let state = await getState(from);
 
-    // 1️⃣ PRIMER MENSAJE (no hay estado)
+    // ===============================
+    // 1️⃣ DETECTAR SERVICIO (solo 1 vez)
+    // ===============================
     if (!state.service) {
-      const detected = detectService(incomingMsg);
+      const detected = detectService(incoming);
 
       if (detected) {
         state = {
@@ -25,49 +32,63 @@ router.post("/", async (req, res) => {
         };
         await saveState(from, state);
 
-        const stepConfig = serviceSteps[detected.service][detected.step];
-
-        return sendTwilio(res, stepConfig.question);
+        return send(res, serviceSteps[state.service][state.step].question);
       }
 
-      // saludo genérico SOLO si no detecta servicio
-      return sendTwilio(
+      return send(
         res,
-        "Perfecto 😊 ¿Qué tipo de servicio estás buscando? Por ejemplo: lona, rotulación, stickers, toldo o letras 3D."
+        "Perfecto, cuéntame un poco más para ayudarte mejor."
       );
     }
 
-    // 2️⃣ FLUJO ACTIVO
-    const currentService = state.service;
-    const currentStep = state.step;
+    // ===============================
+    // 2️⃣ AVANZAR PASOS DEL SERVICIO
+    // ===============================
+    const flow = serviceSteps[state.service];
+    const currentStep = flow[state.step];
 
-    const stepConfig = serviceSteps[currentService][currentStep];
+    if (!currentStep) {
+      // reset de seguridad
+      await saveState(from, {});
+      return send(
+        res,
+        "Perfecto, cuéntame nuevamente qué servicio necesitas."
+      );
+    }
 
-    // Guardamos respuesta del usuario
-    state[currentStep] = incomingMsg;
+    // Guardar respuesta del usuario
+    state.answers = state.answers || {};
+    state.answers[state.step] = incoming;
 
-    // Avanzamos step
-    state.step = stepConfig.next;
+    // Determinar siguiente paso
+    const nextStep = currentStep.next;
+
+    if (nextStep && flow[nextStep]) {
+      state.step = nextStep;
+      await saveState(from, state);
+
+      return send(res, flow[nextStep].question);
+    }
+
+    // ===============================
+    // 3️⃣ RESPUESTA FINAL (sin asesor automático)
+    // ===============================
     await saveState(from, state);
 
-    // Si ya no hay más pasos → cierre suave (NO asesor todavía)
-    if (!state.step) {
-      return sendTwilio(
-        res,
-        "Excelente 👍 Con esto ya tengo claro tu proyecto. En el siguiente mensaje puedo ayudarte a definir materiales y opciones profesionales."
-      );
-    }
-
-    // Pregunta siguiente
-    const nextStepConfig = serviceSteps[currentService][state.step];
-    return sendTwilio(res, nextStepConfig.question);
+    return send(
+      res,
+      "Excelente 👍 Con esta información puedo prepararte una propuesta adecuada. En el siguiente mensaje te explico materiales y opciones recomendadas."
+    );
   } catch (err) {
-    console.error("❌ ERROR CHAT:", err);
-    return sendTwilio(res, "Ocurrió un error. Intentemos nuevamente 🙏");
+    console.error("❌ CHAT ERROR:", err);
+    return send(res, "Ocurrió un error. Intentemos nuevamente 🙏");
   }
 });
 
-function sendTwilio(res, message) {
+/**
+ * Respuesta obligatoria para Twilio
+ */
+function send(res, message) {
   res.set("Content-Type", "text/xml");
   res.send(`
     <Response>
