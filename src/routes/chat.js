@@ -1,11 +1,16 @@
 import express from "express";
+import twilio from "twilio";
+
 import { getState, saveState } from "../memory/stateManager.js";
 import { detectService } from "../services/serviceDetector.js";
 import { serviceSteps } from "../services/serviceSteps.js";
 
 const router = express.Router();
+const MessagingResponse = twilio.twiml.MessagingResponse;
 
 router.post("/", async (req, res) => {
+  const twiml = new MessagingResponse();
+
   try {
     const from = req.body.From;
     const incomingMsg = (req.body.Body || "").trim();
@@ -18,72 +23,9 @@ router.post("/", async (req, res) => {
     if (!state.service) {
       const detected = detectService(incomingMsg);
 
-      if (detected) {
+      if (detected && serviceSteps[detected.service]) {
         state.service = detected.service;
         state.stepIndex = 0;
+        state.answers = {};
 
-        await saveState(from, state);
-
-        return respond(
-          res,
-          serviceSteps[state.service][0].question
-        );
-      }
-
-      return respond(res, "Perfecto, dime un poco más para ayudarte mejor.");
-    }
-
-    // =============================
-    // 2️⃣ FLUJO POR STEPS
-    // =============================
-    const steps = serviceSteps[state.service];
-    const currentStep = steps[state.stepIndex];
-
-    if (!currentStep) {
-      await saveState(from, {});
-      return respond(
-        res,
-        "Excelente 👍 Con esta información puedo prepararte una propuesta completa."
-      );
-    }
-
-    // Guardar respuesta del usuario
-    state.answers = state.answers || {};
-    state.answers[currentStep.key] = incomingMsg;
-
-    // ⬆️ AVANZAR STEP (ESTO ERA EL BUG)
-    state.stepIndex += 1;
-
-    await saveState(from, state);
-
-    // =============================
-    // 3️⃣ SIGUIENTE PASO O CIERRE
-    // =============================
-    if (state.stepIndex < steps.length) {
-      return respond(
-        res,
-        steps[state.stepIndex].question
-      );
-    }
-
-    return respond(
-      res,
-      "Excelente 👍 Con esta información puedo recomendarte materiales y rangos de precio según tu proyecto."
-    );
-
-  } catch (err) {
-    console.error("❌ CHAT ERROR:", err);
-    return respond(res, "Ocurrió un error, intentemos nuevamente 🙏");
-  }
-});
-
-function respond(res, message) {
-  res.set("Content-Type", "text/xml");
-  res.send(`
-    <Response>
-      <Message>${message}</Message>
-    </Response>
-  `);
-}
-
-export default router;
+        await saveState(from,
