@@ -39,6 +39,18 @@ router.post("/", async (req, res) => {
     const from = req.body.From;
     const incomingMsg = (req.body.Body || "").trim();
     const lowerMsg = incomingMsg.toLowerCase();
+    
+    // 📐 EXTRAER MEDIDAS DESDE TEXTO LIBRE
+const measureMatch =
+  lowerMsg.match(/(\d+(\.\d+)?)\s*(m|metro|metros)?\s*(de\s*)?(ancho|x|por)\s*(\d+(\.\d+)?)/);
+
+if (measureMatch) {
+  state.answers = state.answers || {};
+  state.answers.ancho = Number(measureMatch[1]);
+  state.answers.alto = Number(measureMatch[6]);
+  await saveState(from, state);
+}
+
 
     // =============================
     // CARGAR ESTADO
