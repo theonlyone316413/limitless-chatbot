@@ -1,18 +1,41 @@
-// Rangos base en MXN (ejemplos realistas; ajusta a tu mercado)
+// Rangos base en MXN (ajusta a tu mercado)
 export const priceRules = {
-  lona: ({ areaM2, material }) => {
-    const base =
-      material === "18"
-        ? { min: 180, max: 260 } // por m2
-        : { min: 120, max: 180 };
+  lona: ({ areaM2 }) => {
+    const options = {
+      basic13oz: {
+        label: "Lona 13 oz (económica)",
+        minM2: 120,
+        maxM2: 180,
+        description: "Ideal para fachadas y promociones estándar."
+      },
+      premium18oz: {
+        label: "Lona 18 oz (alta resistencia)",
+        minM2: 180,
+        maxM2: 260,
+        description: "Mayor durabilidad, recomendada para exteriores prolongados."
+      }
+    };
 
     return {
-      min: Math.round(base.min * areaM2),
-      max: Math.round(base.max * areaM2),
-      notes: "Incluye impresión alta resolución. Ojillos y refuerzo pueden variar.",
+      options: {
+        "13oz": {
+          label: options.basic13oz.label,
+          min: Math.round(options.basic13oz.minM2 * areaM2),
+          max: Math.round(options.basic13oz.maxM2 * areaM2),
+          notes: options.basic13oz.description
+        },
+        "18oz": {
+          label: options.premium18oz.label,
+          min: Math.round(options.premium18oz.minM2 * areaM2),
+          max: Math.round(options.premium18oz.maxM2 * areaM2),
+          notes: options.premium18oz.description
+        }
+      },
+      commonNotes:
+        "Incluye impresión alta resolución. Ojillos y refuerzo perimetral se cotizan según necesidad."
     };
   },
-
+  
   toldo: ({ areaM2, tipo }) => {
     const base =
       tipo === "fijo"
