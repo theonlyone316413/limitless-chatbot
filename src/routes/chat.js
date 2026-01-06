@@ -12,14 +12,24 @@ router.post("/", async (req, res) => {
     const from = req.body.From;
     const msg = (req.body.Body || "").trim().toLowerCase();
 
-    let state = await getState(from);
-    if (!state) state = {};
+let state = await getState(from);
+
+// Detectamos estado vacío real
+const isNewState = !state || Object.keys(state).length === 0;
+
 
     // ===============================
     // 1️⃣ DETECTAR SERVICIO (solo una vez)
     // ===============================
-    if (!state.service) {
-      const detected = detectService(msg);
+if (isNewState || !state.service) {
+  const detected = detectService(msg);
+
+  if (detected) {
+    state.service = detected.service;
+    state.step = "inicio";
+  }
+}
+
 
       if (detected) {
         state.service = detected.service;
