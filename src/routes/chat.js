@@ -32,23 +32,6 @@ const PRICE_INTENT = [
   "vale",
 ];
 
-// =============================
-// UTILIDAD: PARSEAR MEDIDAS
-// =============================
-function parseMedidas(text) {
-  const match = text
-    .toLowerCase()
-    .replace(",", ".")
-    .match(/(\d+(\.\d+)?)\s*(m|mt|metro|metros)?\s*[x×]\s*(\d+(\.\d+)?)/);
-
-  if (!match) return null;
-
-  return {
-    ancho: parseFloat(match[1]),
-    alto: parseFloat(match[4]),
-  };
-}
-
 router.post("/", async (req, res) => {
   const twiml = new MessagingResponse();
 
@@ -66,7 +49,7 @@ router.post("/", async (req, res) => {
     const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
 
     // =============================
-    // 👋 SALUDO → RESET LIMPIO
+    // 👋 SALUDO (REINICIO LIMPIO)
     // =============================
     if (isGreeting) {
       await saveState(from, {});
@@ -75,6 +58,19 @@ router.post("/", async (req, res) => {
         twiml,
         "¡Hola! 👋 ¿Qué te gustaría cotizar hoy? (lona, toldo, vinil, rótulo)"
       );
+    }
+
+    // =============================
+    // 📐 EXTRAER MEDIDAS AUTOMÁTICAMENTE
+    // =============================
+    const measureMatch = lowerMsg.match(
+      /(\d+(?:\.\d+)?)\s*(?:m|metro|metros)?\s*(?:x|por|de ancho)?\s*(\d+(?:\.\d+)?)/i
+    );
+
+    if (measureMatch) {
+      state.answers.ancho = Number(measureMatch[1]);
+      state.answers.alto = Number(measureMatch[2]);
+      await saveState(from, state);
     }
 
     // =============================
@@ -104,55 +100,73 @@ router.post("/", async (req, res) => {
     }
 
     // =============================
-    // 2️⃣ FLUJO LONA (CONTROLADO)
+    // 💰 LONA – OFRECER OPCIONES (UNA SOLA VEZ)
     // =============================
-    if (state.service === "lona") {
-      const parsed = parseMedidas(incomingMsg);
-      if (parsed) {
-        state.answers.ancho = parsed.ancho;
-        state.answers.alto = parsed.alto;
-        await saveState(from, state);
-      }
+    if (state.service === "lona" && wantsPrice) {
+      const { ancho, alto } = state.answers;
 
-      const { uso, ancho, alto } = state.answers;
-
-      // Falta uso
-      if (!uso) {
-        return reply(
-          res,
-          twiml,
-          "Perfecto. ¿La lona es para fachada, evento o promoción temporal?"
-        );
-      }
-
-      // Falta medidas
       if (!ancho || !alto) {
         return reply(
           res,
           twiml,
-          "Gracias. ¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 5 x 1)"
+          "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 5 x 1)"
         );
       }
 
-      // Ya tengo TODO → opciones
-      if (!state.answers.material) {
-        const area = ancho * alto;
-        state.answers.area = area;
+      const area = ancho * alto;
+
+      return reply(
+        res,
+        twiml,
+        `💰 Para una lona de *${area} m²* te ofrezco:\n\n` +
+        `🟢 *Lona 13 oz* (opción económica)\n` +
+        `🔵 *Lona 18 oz* (más resistente al sol y lluvia)\n\n` +
+        `👉 ¿Cuál opción te interesa cotizar?`
+      );
+    }
+
+    // =============================
+    // 🧵 SELECCIÓN DE MATERIAL → PRECIO FINAL
+    // =============================
+    if (state.service === "lona") {
+      const material18 = lowerMsg.includes("18");
+      const material13 =
+        lowerMsg.includes("13") ||
+        lowerMsg.includes("económica") ||
+        lowerMsg.includes("economica");
+
+      if (material18 || material13) {
+        state.answers.material = material18 ? "18" : "13";
         await saveState(from, state);
+
+        const { ancho, alto } = state.answers;
+        const area = ancho * alto;
+
+        const pricePerM2 =
+          state.answers.material === "18"
+            ? { min: 180, max: 260 }
+            : { min: 120, max: 180 };
+
+        const min = area * pricePerM2.min;
+        const max = area * pricePerM2.max;
+
+        await saveState(from, {}); // 🔒 cerrar conversación
 
         return reply(
           res,
           twiml,
-          `💰 Para una lona de *${area} m²* te ofrezco:\n\n` +
-          `🟢 *Lona 13 oz* (opción económica)\n` +
-          `🔵 *Lona 18 oz* (más resistente al sol y lluvia)\n\n` +
-          `👉 ¿Cuál opción te interesa cotizar?`
+          `💰 *Cotización final*\n\n` +
+          `📐 Medidas: ${ancho} x ${alto} m (${area} m²)\n` +
+          `🧵 Material: Lona ${state.answers.material} oz\n\n` +
+          `💵 *Precio estimado:* $${min} – $${max} MXN\n\n` +
+          `Incluye impresión en alta resolución.\n` +
+          `👉 ¿Deseas agregar instalación o te preparo cotización formal?`
         );
       }
     }
 
     // =============================
-    // 3️⃣ FLUJO GENÉRICO POR PASOS
+    // 2️⃣ FLUJO NORMAL POR PASOS
     // =============================
     const steps = serviceSteps[state.service];
     const step = steps[state.stepIndex];
@@ -174,7 +188,7 @@ router.post("/", async (req, res) => {
       res,
       twiml,
       steps[state.stepIndex]?.question ||
-      "Perfecto 👍 seguimos con la cotización."
+        "Perfecto 👍 seguimos con la cotización."
     );
 
   } catch (err) {
