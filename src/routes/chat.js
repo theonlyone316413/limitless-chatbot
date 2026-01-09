@@ -41,7 +41,10 @@ router.post("/", async (req, res) => {
   try {
     const from = req.body.From;
     const incomingMsg = (req.body.Body || "").trim();
-    const lowerMsg = incomingMsg.toLowerCase();
+    const isEnglish = /\b(hello|hi|please|price|how much|banner|sign)\b/i.test(lowerMsg);
+
+const isGreeting = /\b(hola|buenas|hello|hi|hey)\b/i.test(lowerMsg);
+
 
     let state = (await getState(from)) || {};
     state.answers = state.answers || {};
@@ -59,9 +62,12 @@ router.post("/", async (req, res) => {
       return reply(
         res,
         twiml,
-        "¡Hola! 👋 Cuéntame qué proyecto tienes en mente."
-      );
-    }
+    if (isEnglish) {
+  return reply(res, twiml, "Got it 👍 Tell me a bit about what you need.");
+}
+
+return reply(res, twiml, "¡Hola! 👋 Cuéntame qué proyecto tienes en mente.");
+
 
     // =============================
     // 📐 EXTRAER MEDIDAS AUTOMÁTICAS
