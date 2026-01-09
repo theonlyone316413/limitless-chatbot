@@ -3,53 +3,38 @@ import twilio from "twilio";
 
 import { getState, saveState } from "../memory/stateManager.js";
 import { detectService } from "../services/serviceDetector.js";
+import { serviceSteps } from "../services/serviceSteps.js";
 
 const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
-/* =============================
-   CONFIGURACIÓN BÁSICA
-============================= */
-
+// =============================
+// CONSTANTES
+// =============================
 const GREETINGS = [
-  "hola", "hola!", "buenas", "buenos dias", "buenos días",
-  "hey", "hello", "hi"
+  "hola",
+  "hola!",
+  "buenas",
+  "buenos dias",
+  "buenos días",
+  "hey",
+  "hello",
+  "hi",
 ];
 
 const PRICE_INTENT = [
-  "precio", "cuanto cuesta", "cuánto cuesta",
-  "cuanto me cuesta", "cuánto me cuesta", "costo", "vale"
+  "cuanto cuesta",
+  "cuánto cuesta",
+  "precio",
+  "cuanto me cuesta",
+  "cuánto me cuesta",
+  "costo",
+  "vale",
 ];
 
-/* =============================
-   DETECTOR DE IDIOMA (ROBUSTO)
-============================= */
-function detectLanguage(text) {
-  const spanishWords = [
-    "hola", "buenas", "necesito", "lona", "precio", "cuanto",
-    "fachada", "negocio", "quiero", "medidas", "instalacion",
-    "diseño", "cotizacion", "pesos", "mxn"
-  ];
-
-  const lower = text.toLowerCase();
-  for (const word of spanishWords) {
-    if (lower.includes(word)) return "es";
-  }
-  return "en";
-}
-
-/* =============================
-   RESPUESTA TWILIO SEGURA
-============================= */
-function reply(res, twiml, text) {
-  twiml.message(text);
-  res.type("text/xml");
-  return res.send(twiml.toString());
-}
-
-/* =============================
-   ENDPOINT PRINCIPAL
-============================= */
+// =============================
+// ROUTE
+// =============================
 router.post("/", async (req, res) => {
   const twiml = new MessagingResponse();
 
@@ -60,33 +45,43 @@ router.post("/", async (req, res) => {
 
     let state = (await getState(from)) || {};
     state.answers = state.answers || {};
-    state.lang = state.lang || detectLanguage(incomingMsg);
 
     const isGreeting =
       GREETINGS.includes(lowerMsg) && lowerMsg.split(" ").length <= 2;
 
     const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
 
-    /* =============================
-       SALUDO → RESET CONTROLADO
-    ============================= */
+    // =============================
+    // 👋 SALUDO (RESET TOTAL)
+    // =============================
     if (isGreeting) {
-      await saveState(from, { lang: state.lang });
+      await saveState(from, {});
       return reply(
         res,
         twiml,
-        state.lang === "en"
-          ? "Got it 👍 Tell me a bit about what you need."
-          : "Perfecto 👍 Cuéntame un poco de lo que necesitas."
+        "¡Hola! 👋 Cuéntame qué proyecto tienes en mente."
       );
     }
 
-    /* =============================
-       DETECTAR SERVICIO
-    ============================= */
- 
+    // =============================
+    // 📐 EXTRAER MEDIDAS AUTOMÁTICAS
+    // =============================
+    const measureMatch = lowerMsg.match(
+      /(\d+(?:\.\d+)?)\s*(?:m|metro|metros)?\s*(?:x|por)?\s*(\d+(?:\.\d+)?)/i
+    );
 
-      if (detected?.service === "lona") {
+    if (measureMatch) {
+      state.answers.ancho = Number(measureMatch[1]);
+      state.answers.alto = Number(measureMatch[2]);
+      await saveState(from, state);
+    }
+
+    // ===================================================
+    // 🔥 DETECCIÓN FORZADA DE LONA (ANTI-LOOPS)
+    // ===================================================
+    if (!state.service) {
+
+      if (lowerMsg.includes("lona") || lowerMsg.includes("banner")) {
         state.service = "lona";
         state.step = "uso";
         await saveState(from, state);
@@ -98,155 +93,77 @@ router.post("/", async (req, res) => {
         );
       }
 
-      return reply(
-        res,
-        twiml,
-        state.lang === "en"
-          ? "Please tell me more about your project."
-          : "Cuéntame un poco más sobre lo que necesitas."
-      );
-    }
-if (!state.service) {
+      const detected = detectService(incomingMsg);
 
-  // 🔒 FORZAR detección de lona por palabra clave
-  if (lowerMsg.includes("lona") || lowerMsg.includes("banner")) {
-    state.service = "lona";
-    state.step = "uso";
-    await saveState(from, state);
+      if (detected?.service) {
+        state.service = detected.service;
+        state.step = "uso";
+        await saveState(from, state);
 
-    return reply(
-      res,
-      twiml,
-      "Perfecto 👍 ¿La lona es para fachada, evento o promoción temporal?"
-    );
-  }
-
-  const detected = detectService(incomingMsg);
-
-  if (detected?.service) {
-    state.service = detected.service;
-    state.step = "uso";
-    await saveState(from, state);
-
-    return reply(
-      res,
-      twiml,
-      "Perfecto 👍 ¿Podrías contarme un poco más del uso que le darás?"
-    );
-  }
-
-  return reply(
-    res,
-    twiml,
-    "Perfecto 👍 Cuéntame un poco más de lo que necesitas."
-  );
-}
-
-    /* =============================
-       FLUJO LONA (LINEAL, SIN LOOP)
-    ============================= */
-
-    // 1️⃣ USO
-    if (state.service === "lona" && state.step === "uso") {
-      state.answers.uso = incomingMsg;
-      state.step = "medidas";
-      await saveState(from, state);
-
-      return reply(
-        res,
-        twiml,
-        "Gracias. ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)"
-      );
-    }
-
-    // 2️⃣ MEDIDAS
-    if (state.service === "lona" && state.step === "medidas") {
-      const match = incomingMsg.match(
-        /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i
-      );
-
-      if (!match) {
         return reply(
           res,
           twiml,
-          "¿Podrías indicarme las medidas en formato ancho x alto? (ejemplo: 5 x 1)"
+          "Perfecto 👍 ¿Podrías contarme un poco más del uso que le darás?"
         );
       }
 
-      state.answers.ancho = Number(match[1]);
-      state.answers.alto = Number(match[2]);
-      state.step = "material";
-      await saveState(from, state);
+      return reply(
+        res,
+        twiml,
+        "Perfecto 👍 Cuéntame un poco más de lo que necesitas."
+      );
+    }
 
-      const area = state.answers.ancho * state.answers.alto;
+    // =============================
+    // 💰 PRECIO LONA (SOLO CUANDO APLICA)
+    // =============================
+    if (state.service === "lona" && wantsPrice) {
+      const { ancho, alto } = state.answers;
+
+      if (!ancho || !alto) {
+        return reply(
+          res,
+          twiml,
+          "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 5 x 1)"
+        );
+      }
+
+      const area = ancho * alto;
 
       return reply(
         res,
         twiml,
-        `Para una lona de *${area} m²* te ofrezco:\n\n` +
-        `🟢 Lona 13 oz (opción económica)\n` +
-        `🔵 Lona 18 oz (más resistente al sol y la lluvia)\n\n` +
-        `👉 ¿Cuál opción prefieres?`
+        `💰 Para una lona de *${area} m²* puedo ofrecerte:\n\n` +
+        `🟢 *Lona 13 oz* (opción económica)\n` +
+        `🔵 *Lona 18 oz* (exterior reforzada)\n\n` +
+        `👉 ¿Cuál opción prefieres cotizar?`
       );
     }
 
-    // 3️⃣ MATERIAL → PRECIO IMPRESIÓN
-    if (state.service === "lona" && state.step === "material") {
-      const material =
-        lowerMsg.includes("18") ? "18 oz" : "13 oz";
+    // =============================
+    // 🧭 FLUJO POR PASOS
+    // =============================
+    const steps = serviceSteps[state.service];
+    const currentStep = steps?.[state.stepIndex ?? 0];
 
-      state.answers.material = material;
-      state.step = "diseno";
-      await saveState(from, state);
-
-      const area = state.answers.ancho * state.answers.alto;
-      const precio =
-        material === "18 oz"
-          ? area * 160
-          : area * 120;
-
-      return reply(
-        res,
-        twiml,
-        `🧾 Cotización de impresión:\n\n` +
-        `• Medidas: ${state.answers.ancho} x ${state.answers.alto} m\n` +
-        `• Material: Lona ${material}\n` +
-        `• Precio impresión: *$${precio} MXN*\n\n` +
-        `¿Cuentas con diseño o deseas que lo desarrollemos?`
-      );
-    }
-
-    // 4️⃣ DISEÑO
-    if (state.service === "lona" && state.step === "diseno") {
-      state.answers.diseno = incomingMsg;
-      state.step = "instalacion";
-      await saveState(from, state);
-
-      return reply(
-        res,
-        twiml,
-        "Perfecto 👍 ¿Deseas agregar instalación?"
-      );
-    }
-
-    // 5️⃣ INSTALACIÓN
-    if (state.service === "lona" && state.step === "instalacion") {
-      state.answers.instalacion = incomingMsg;
-
+    if (!currentStep) {
       await saveState(from, {});
-
       return reply(
         res,
         twiml,
-        "Excelente 👍 Con esta información puedo prepararte la cotización formal y tiempos de entrega."
+        "Excelente 👍 Con esta información puedo prepararte la cotización final."
       );
     }
 
-    // FALLBACK
+    state.answers[currentStep.key] = incomingMsg;
+    state.stepIndex = (state.stepIndex ?? 0) + 1;
+    await saveState(from, state);
+
     return reply(
       res,
       twiml,
-      "Perfecto 👍 continuamos."
+      steps[state.stepIndex]?.question ||
+      "Perfecto 👍 seguimos avanzando con la cotización."
     );
 
   } catch (error) {
@@ -258,5 +175,14 @@ if (!state.service) {
     );
   }
 });
+
+// =============================
+// RESPUESTA TWILIO
+// =============================
+function reply(res, twiml, text) {
+  twiml.message(text);
+  res.type("text/xml");
+  return res.send(twiml.toString());
+}
 
 export default router;
