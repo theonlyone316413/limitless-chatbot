@@ -43,7 +43,9 @@ router.post("/", async (req, res) => {
     let state = (await getState(from)) || {};
     state.answers = state.answers || {};
 
-    const isGreeting = GREETINGS.includes(lowerMsg);
+    const isGreeting =
+  GREETINGS.includes(lowerMsg) && lowerMsg.split(" ").length <= 2;
+
     const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
 
     // =============================
