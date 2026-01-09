@@ -9,22 +9,19 @@ const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 // =============================
+// RESPUESTA TWILIO (ARRIBA)
+// =============================
+function reply(res, twiml, text) {
+  twiml.message(text);
+  res.type("text/xml");
+  return res.send(twiml.toString());
+}
+
+// =============================
 // CONSTANTES
 // =============================
 const GREETING_REGEX = /\b(hola|buenas|hello|hi|hey)\b/i;
 const ENGLISH_REGEX = /\b(hello|hi|please|price|how much|banner|sign)\b/i;
-
-const PRICE_INTENT = [
-  "cuanto cuesta",
-  "cuánto cuesta",
-  "precio",
-  "cuanto me cuesta",
-  "cuánto me cuesta",
-  "costo",
-  "vale",
-  "price",
-  "how much"
-];
 
 // =============================
 // ROUTE
@@ -33,7 +30,7 @@ router.post("/", async (req, res) => {
   const twiml = new MessagingResponse();
 
   try {
-    const from = req.body.From;
+    const from = req.body.From || "anonymous";
     const incomingMsg = (req.body.Body || "").trim();
     const lowerMsg = incomingMsg.toLowerCase();
 
@@ -42,10 +39,9 @@ router.post("/", async (req, res) => {
 
     const isGreeting = GREETING_REGEX.test(lowerMsg);
     const isEnglish = ENGLISH_REGEX.test(lowerMsg);
-    const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
 
     // =============================
-    // 👋 SALUDO (SOLO UNA VEZ)
+    // 👋 SALUDO
     // =============================
     if (isGreeting && !state.started) {
       state.started = true;
@@ -55,7 +51,7 @@ router.post("/", async (req, res) => {
         res,
         twiml,
         isEnglish
-          ? "Got it 👍 Tell me a bit about what you need."
+          ? "Got it 👍 Tell me what project you have in mind."
           : "¡Hola! 👋 Cuéntame qué proyecto tienes en mente."
       );
     }
@@ -81,7 +77,6 @@ router.post("/", async (req, res) => {
 
       if (detected?.service && serviceSteps[detected.service]) {
         state.service = detected.service;
-        state.stepIndex = 0;
         await saveState(from, state);
 
         return reply(
@@ -101,7 +96,7 @@ router.post("/", async (req, res) => {
     }
 
     // =============================
-    // 💰 COTIZACIÓN LONA
+    // 🟢 FLUJO LONA
     // =============================
     if (state.service === "lona") {
       const { ancho, alto, uso, materialElegido } = state.answers;
@@ -110,10 +105,11 @@ router.post("/", async (req, res) => {
       if (!uso) {
         state.answers.uso = incomingMsg;
         await saveState(from, state);
+
         return reply(
           res,
           twiml,
-          "Gracias. ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)"
+          "Gracias 👍 ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)"
         );
       }
 
@@ -128,47 +124,31 @@ router.post("/", async (req, res) => {
 
       const area = ancho * alto;
 
-      // Paso 3: elegir material
+      // Paso 3: material
       if (!materialElegido) {
-        return reply(
-          res,
-          twiml,
-          `Para una lona de ${area} m² te ofrezco:\n\n` +
-          `🟢 Lona 13 oz (opción económica)\n` +
-          `🔵 Lona 18 oz (más resistente para exterior)\n\n` +
-          `¿Cuál opción prefieres?`
-        );
+        if (lowerMsg.includes("13")) {
+          state.answers.materialElegido = "13";
+          await saveState(from, state);
+        } else if (lowerMsg.includes("18")) {
+          state.answers.materialElegido = "18";
+          await saveState(from, state);
+        } else {
+          return reply(
+            res,
+            twiml,
+            `Para una lona de ${area} m² te ofrezco:\n\n` +
+              `🟢 Lona 13 oz (económica)\n` +
+              `🔵 Lona 18 oz (exterior)\n\n` +
+              `¿Cuál prefieres?`
+          );
+        }
       }
-if (!materialElegido) {
-  if (lowerMsg.includes("13")) state.answers.materialElegido = "13";
-  if (lowerMsg.includes("18")) state.answers.materialElegido = "18";
 
-  if (state.answers.materialElegido) {
-    await saveState(from, state);
-  } else {
-    return reply(
-      res,
-      twiml,
-      "Por favor dime si prefieres lona 13 oz o 18 oz."
-    );
-  }
-}
-if (!state.answers.instalacionAltura) {
-  state.answers.instalacionAltura = incomingMsg;
-  await saveState(from, state);
-  return reply(
-    res,
-    twiml,
-    "Perfecto 👍 ¿Cuentas con diseño o deseas que lo desarrollemos?"
-  );
-}
-
-      // Paso 4: PRECIO FIJO
+      // Paso 4: precio
       if (!state.priceSent) {
-        let precio = 0;
-
-        if (materialElegido === "13") precio = area * 120;
-        if (materialElegido === "18") precio = area * 160;
+        const material = state.answers.materialElegido;
+        const precio =
+          material === "13" ? area * 120 : area * 160;
 
         state.priceSent = true;
         await saveState(from, state);
@@ -177,22 +157,22 @@ if (!state.answers.instalacionAltura) {
           res,
           twiml,
           `Cotización de impresión:\n\n` +
-          `Medidas: ${ancho} x ${alto} m\n` +
-          `Material: Lona ${materialElegido} oz\n` +
-          `💰 Precio: $${precio} MXN\n\n` +
-          `¿Deseas agregar instalación?`
+            `Medidas: ${ancho} x ${alto} m\n` +
+            `Material: Lona ${material} oz\n` +
+            `💰 Precio: $${precio} MXN\n\n` +
+            `¿Deseas agregar instalación?`
         );
       }
 
       // Paso 5: instalación
-      if (!state.installationAsked) {
-        state.installationAsked = true;
+      if (!state.answers.instalacionAltura) {
+        state.answers.instalacionAltura = incomingMsg;
         await saveState(from, state);
 
         return reply(
           res,
           twiml,
-          "Perfecto 👍 ¿A qué altura aproximada se instalará la lona?"
+          "Perfecto 👍 ¿Cuentas con diseño o deseas que lo desarrollemos?"
         );
       }
 
@@ -225,7 +205,6 @@ if (!state.answers.instalacionAltura) {
       twiml,
       "Perfecto 👍 dime un poco más para continuar."
     );
-
   } catch (err) {
     console.error("❌ CHAT ERROR:", err);
     return reply(
@@ -235,14 +214,5 @@ if (!state.answers.instalacionAltura) {
     );
   }
 });
-
-// =============================
-// RESPUESTA TWILIO
-// =============================
-function reply(res, twiml, text) {
-  twiml.message(text);
-  res.type("text/xml");
-  return res.send(twiml.toString());
-}
 
 export default router;
