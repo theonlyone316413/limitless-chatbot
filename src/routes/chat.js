@@ -9,12 +9,12 @@ const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 // =============================
-// RESPUESTA TWILIO (ARRIBA)
+// UTIL: RESPUESTA SEGURA
 // =============================
 function reply(res, twiml, text) {
   twiml.message(text);
   res.type("text/xml");
-  return res.send(twiml.toString());
+  return res.status(200).send(twiml.toString());
 }
 
 // =============================
@@ -22,6 +22,7 @@ function reply(res, twiml, text) {
 // =============================
 const GREETING_REGEX = /\b(hola|buenas|hello|hi|hey)\b/i;
 const ENGLISH_REGEX = /\b(hello|hi|please|price|how much|banner|sign)\b/i;
+const TTL_24H = 24 * 60 * 60 * 1000;
 
 // =============================
 // ROUTE
@@ -35,48 +36,57 @@ router.post("/", async (req, res) => {
     const lowerMsg = incomingMsg.toLowerCase();
 
     let state = (await getState(from)) || {};
+
+    // =============================
+    // TTL: RESET SI PASARON 24H
+    // =============================
+    if (state.lastInteraction && Date.now() - state.lastInteraction > TTL_24H) {
+      state = {};
+    }
+
     state.answers = state.answers || {};
+    state.step = state.step || 0;
 
     const isGreeting = GREETING_REGEX.test(lowerMsg);
     const isEnglish = ENGLISH_REGEX.test(lowerMsg);
 
     // =============================
-    // 👋 SALUDO
+    // IDIOMA (SOLO UNA VEZ)
     // =============================
-    if (isGreeting && !state.started) {
-      state.started = true;
+    if (!state.language) {
+      state.language = isEnglish ? "en" : "es";
+    }
+
+    const t = (es, en) => (state.language === "en" ? en : es);
+
+    // =============================
+    // SALUDO / RESET
+    // =============================
+    if (isGreeting && state.step === 0) {
+      state.step = 1;
+      state.lastInteraction = Date.now();
       await saveState(from, state);
 
       return reply(
         res,
         twiml,
-        isEnglish
-          ? "Got it 👍 Tell me what project you have in mind."
-          : "¡Hola! 👋 Cuéntame qué proyecto tienes en mente."
+        t(
+          "¡Hola! 👋 Cuéntame qué proyecto tienes en mente.",
+          "Hi 👋 Tell me about the project you have in mind."
+        )
       );
     }
 
     // =============================
-    // 📐 EXTRAER MEDIDAS
-    // =============================
-    const measureMatch = lowerMsg.match(
-      /(\d+(?:\.\d+)?)\s*(?:x|por|\*)\s*(\d+(?:\.\d+)?)/i
-    );
-
-    if (measureMatch) {
-      state.answers.ancho = Number(measureMatch[1]);
-      state.answers.alto = Number(measureMatch[2]);
-      await saveState(from, state);
-    }
-
-    // =============================
-    // 1️⃣ DETECTAR SERVICIO
+    // DETECTAR SERVICIO
     // =============================
     if (!state.service) {
       const detected = detectService(incomingMsg);
 
       if (detected?.service && serviceSteps[detected.service]) {
         state.service = detected.service;
+        state.step = 1;
+        state.lastInteraction = Date.now();
         await saveState(from, state);
 
         return reply(
@@ -89,121 +99,143 @@ router.post("/", async (req, res) => {
       return reply(
         res,
         twiml,
-        isEnglish
-          ? "Tell me a bit more so I can help you."
-          : "Perfecto 👍 dime un poco más para poder ayudarte."
+        t(
+          "Perfecto 👍 dime un poco más para ayudarte.",
+          "Great 👍 tell me a bit more so I can help you."
+        )
       );
     }
 
     // =============================
-    // 🟢 FLUJO LONA
+    // FLUJO: LONA
     // =============================
     if (state.service === "lona") {
-      const { ancho, alto, uso, materialElegido } = state.answers;
-
-      // Paso 1: uso
-      if (!uso) {
+      // PASO 1 — USO
+      if (state.step === 1) {
         state.answers.uso = incomingMsg;
+        state.step = 2;
+        state.lastInteraction = Date.now();
         await saveState(from, state);
 
         return reply(
           res,
           twiml,
-          "Gracias 👍 ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)"
+          t(
+            "Gracias 👍 ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)",
+            "Thanks 👍 What are the approximate measurements? (example: 3 x 1)"
+          )
         );
       }
 
-      // Paso 2: medidas
-      if (!ancho || !alto) {
-        return reply(
-          res,
-          twiml,
-          "¿Cuáles son las medidas aproximadas de la lona? (ejemplo: 3 x 1)"
+      // PASO 2 — MEDIDAS
+      if (state.step === 2) {
+        const match = lowerMsg.match(
+          /(\d+(?:\.\d+)?)\s*(?:x|por|\*)\s*(\d+(?:\.\d+)?)/i
         );
+
+        if (!match) {
+          return reply(
+            res,
+            twiml,
+            t(
+              "Por favor indícame las medidas en formato ancho x alto (ejemplo: 3 x 1).",
+              "Please provide measurements as width x height (example: 3 x 1)."
+            )
+          );
+        }
+
+        state.answers.ancho = Number(match[1]);
+        state.answers.alto = Number(match[2]);
+        state.step = 3;
+        state.lastInteraction = Date.now();
+        await saveState(from, state);
       }
 
+      const { ancho, alto } = state.answers;
       const area = ancho * alto;
 
-      // Paso 3: material
-      if (!materialElegido) {
+      // PASO 3 — MATERIAL
+      if (state.step === 3) {
         if (lowerMsg.includes("13")) {
-          state.answers.materialElegido = "13";
-          await saveState(from, state);
+          state.answers.material = "13";
         } else if (lowerMsg.includes("18")) {
-          state.answers.materialElegido = "18";
-          await saveState(from, state);
+          state.answers.material = "18";
         } else {
           return reply(
             res,
             twiml,
-            `Para una lona de ${area} m² te ofrezco:\n\n` +
-              `🟢 Lona 13 oz (económica)\n` +
-              `🔵 Lona 18 oz (exterior)\n\n` +
-              `¿Cuál prefieres?`
+            t(
+              `Para una lona de ${area} m² te ofrezco:\n\n🟢 Lona 13 oz (económica)\n🔵 Lona 18 oz (exterior)\n\n¿Cuál prefieres?`,
+              `For a ${area} m² banner I offer:\n\n🟢 13 oz banner (economy)\n🔵 18 oz banner (outdoor)\n\nWhich do you prefer?`
+            )
           );
         }
+
+        state.step = 4;
+        state.lastInteraction = Date.now();
+        await saveState(from, state);
       }
 
-      // Paso 4: precio
-      if (!state.priceSent) {
-        const material = state.answers.materialElegido;
-        const precio =
-          material === "13" ? area * 120 : area * 160;
+      // PASO 4 — PRECIO
+      if (state.step === 4) {
+        const material = state.answers.material;
+        const price = material === "13" ? area * 120 : area * 160;
 
-        state.priceSent = true;
+        state.step = 5;
+        state.lastInteraction = Date.now();
         await saveState(from, state);
 
         return reply(
           res,
           twiml,
-          `Cotización de impresión:\n\n` +
-            `Medidas: ${ancho} x ${alto} m\n` +
-            `Material: Lona ${material} oz\n` +
-            `💰 Precio: $${precio} MXN\n\n` +
-            `¿Deseas agregar instalación?`
+          t(
+            `Cotización:\n\nMedidas: ${ancho} x ${alto} m\nMaterial: Lona ${material} oz\n💰 Precio: $${price} MXN\n\n¿Deseas agregar instalación?`,
+            `Quote:\n\nSize: ${ancho} x ${alto} m\nMaterial: ${material} oz banner\n💰 Price: $${price} MXN\n\nWould you like installation?`
+          )
         );
       }
 
-      // Paso 5: instalación
-      if (!state.answers.instalacionAltura) {
-        state.answers.instalacionAltura = incomingMsg;
+      // PASO 5 — DISEÑO
+      if (state.step === 5) {
+        state.answers.instalacion = incomingMsg;
+        state.step = 6;
+        state.lastInteraction = Date.now();
         await saveState(from, state);
 
         return reply(
           res,
           twiml,
-          "Perfecto 👍 ¿Cuentas con diseño o deseas que lo desarrollemos?"
-        );
-      }
-
-      // Paso 6: diseño
-      if (!state.designAsked) {
-        state.designAsked = true;
-        await saveState(from, state);
-
-        return reply(
-          res,
-          twiml,
-          "¿Cuentas con diseño o deseas que lo desarrollemos? Dime también el nombre de tu negocio y a qué se dedica."
+          t(
+            "¿Cuentas con diseño o deseas que lo desarrollemos? Dime también el nombre de tu negocio.",
+            "Do you already have a design or would you like us to create it? Please tell me your business name."
+          )
         );
       }
 
       // CIERRE
-      await saveState(from, {});
-      return reply(
-        res,
-        twiml,
-        "Excelente 👍 Con esta información puedo prepararte la cotización formal."
-      );
+      if (state.step === 6) {
+        await saveState(from, {});
+        return reply(
+          res,
+          twiml,
+          t(
+            "Excelente 👍 Con esta información te preparo la cotización formal.",
+            "Perfect 👍 With this information I’ll prepare your formal quote."
+          )
+        );
+      }
     }
 
     // =============================
-    // FALLBACK
+    // FALLBACK SEGURO
     // =============================
     return reply(
       res,
       twiml,
-      "Perfecto 👍 dime un poco más para continuar."
+      t(
+        "¿Podrías darme un poco más de detalle o escribir *hola* para comenzar de nuevo?",
+        "Could you give me more details or type *hi* to start again?"
+      )
     );
   } catch (err) {
     console.error("❌ CHAT ERROR:", err);
