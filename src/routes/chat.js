@@ -139,6 +139,29 @@ router.post("/", async (req, res) => {
           `¿Cuál opción prefieres?`
         );
       }
+if (!materialElegido) {
+  if (lowerMsg.includes("13")) state.answers.materialElegido = "13";
+  if (lowerMsg.includes("18")) state.answers.materialElegido = "18";
+
+  if (state.answers.materialElegido) {
+    await saveState(from, state);
+  } else {
+    return reply(
+      res,
+      twiml,
+      "Por favor dime si prefieres lona 13 oz o 18 oz."
+    );
+  }
+}
+if (!state.answers.instalacionAltura) {
+  state.answers.instalacionAltura = incomingMsg;
+  await saveState(from, state);
+  return reply(
+    res,
+    twiml,
+    "Perfecto 👍 ¿Cuentas con diseño o deseas que lo desarrollemos?"
+  );
+}
 
       // Paso 4: PRECIO FIJO
       if (!state.priceSent) {
