@@ -84,8 +84,7 @@ router.post("/", async (req, res) => {
     /* =============================
        DETECTAR SERVICIO
     ============================= */
-    if (!state.service) {
-      const detected = detectService(incomingMsg);
+ 
 
       if (detected?.service === "lona") {
         state.service = "lona";
@@ -107,6 +106,41 @@ router.post("/", async (req, res) => {
           : "Cuéntame un poco más sobre lo que necesitas."
       );
     }
+if (!state.service) {
+
+  // 🔒 FORZAR detección de lona por palabra clave
+  if (lowerMsg.includes("lona") || lowerMsg.includes("banner")) {
+    state.service = "lona";
+    state.step = "uso";
+    await saveState(from, state);
+
+    return reply(
+      res,
+      twiml,
+      "Perfecto 👍 ¿La lona es para fachada, evento o promoción temporal?"
+    );
+  }
+
+  const detected = detectService(incomingMsg);
+
+  if (detected?.service) {
+    state.service = detected.service;
+    state.step = "uso";
+    await saveState(from, state);
+
+    return reply(
+      res,
+      twiml,
+      "Perfecto 👍 ¿Podrías contarme un poco más del uso que le darás?"
+    );
+  }
+
+  return reply(
+    res,
+    twiml,
+    "Perfecto 👍 Cuéntame un poco más de lo que necesitas."
+  );
+}
 
     /* =============================
        FLUJO LONA (LINEAL, SIN LOOP)
