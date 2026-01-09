@@ -5,10 +5,17 @@ const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 router.post("/", (req, res) => {
-  const twiml = new MessagingResponse();
-  twiml.message("🟢 TEST OK — Twilio sí llega al backend");
-  res.set("Content-Type", "text/xml");
-  res.send(twiml.toString());
+  try {
+    const twiml = new MessagingResponse();
+    twiml.message("🟢 TEST OK — respuesta TwiML válida");
+
+    res.status(200);
+    res.set("Content-Type", "text/xml");
+    res.end(twiml.toString());
+  } catch (err) {
+    console.error("❌ TEST ERROR:", err);
+    res.status(500).send("error");
+  }
 });
 
 export default router;
