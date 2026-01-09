@@ -43,20 +43,18 @@ router.post("/", async (req, res) => {
     let state = (await getState(from)) || {};
     state.answers = state.answers || {};
 
-    const isGreeting =
-      GREETINGS.includes(lowerMsg) && lowerMsg.split(" ").length <= 2;
+  const isGreeting = GREETINGS.some(g => lowerMsg.startsWith(g));
 
-    const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
+// SOLO saludo puro → reset
+if (isGreeting && lowerMsg.split(" ").length <= 2) {
+  await saveState(from, {});
+  return reply(
+    res,
+    twiml,
+    "¡Hola! 👋 ¿Qué te gustaría cotizar hoy? (lona, toldo, vinil, rótulo)"
+  );
+}
 
-    // =============================
-    // 👋 SALUDO (REINICIO LIMPIO)
-    // =============================
-    if (isGreeting) {
-      await saveState(from, {});
-      return reply(
-        res,
-        twiml,
-        "¡Hola! 👋 ¿Qué te gustaría cotizar hoy? (lona, toldo, vinil, rótulo)"
       );
     }
 
