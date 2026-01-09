@@ -7,253 +7,216 @@ import { detectService } from "../services/serviceDetector.js";
 const router = express.Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
-/* =========================================================
-   UTILIDADES
-========================================================= */
+/* =============================
+   CONFIGURACIÓN BÁSICA
+============================= */
 
-const GREETINGS = ["hola", "buenas", "hello", "hi", "hey"];
-const PRICE_WORDS = ["precio", "cuanto", "cuánto", "costo", "vale"];
+const GREETINGS = [
+  "hola", "hola!", "buenas", "buenos dias", "buenos días",
+  "hey", "hello", "hi"
+];
 
+const PRICE_INTENT = [
+  "precio", "cuanto cuesta", "cuánto cuesta",
+  "cuanto me cuesta", "cuánto me cuesta", "costo", "vale"
+];
+
+/* =============================
+   DETECTOR DE IDIOMA (ROBUSTO)
+============================= */
 function detectLanguage(text) {
-  return /[a-z]/i.test(text) && !/[áéíóúñ¿¡]/i.test(text) ? "en" : "es";
+  const spanishWords = [
+    "hola", "buenas", "necesito", "lona", "precio", "cuanto",
+    "fachada", "negocio", "quiero", "medidas", "instalacion",
+    "diseño", "cotizacion", "pesos", "mxn"
+  ];
+
+  const lower = text.toLowerCase();
+  for (const word of spanishWords) {
+    if (lower.includes(word)) return "es";
+  }
+  return "en";
 }
 
+/* =============================
+   RESPUESTA TWILIO SEGURA
+============================= */
 function reply(res, twiml, text) {
   twiml.message(text);
   res.type("text/xml");
   return res.send(twiml.toString());
 }
 
-function extractMeasures(text) {
-  const match = text.match(/(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/);
-  if (!match) return null;
-  return { ancho: Number(match[1]), alto: Number(match[2]) };
-}
-
-/* =========================================================
-   RUTA PRINCIPAL
-========================================================= */
-
+/* =============================
+   ENDPOINT PRINCIPAL
+============================= */
 router.post("/", async (req, res) => {
   const twiml = new MessagingResponse();
 
   try {
     const from = req.body.From;
-    const msg = (req.body.Body || "").trim();
-    const lower = msg.toLowerCase();
-    const lang = detectLanguage(msg);
+    const incomingMsg = (req.body.Body || "").trim();
+    const lowerMsg = incomingMsg.toLowerCase();
 
-    let state = (await getState(from)) || {
-      service: null,
-      step: 0,
-      answers: {},
-    };
+    let state = (await getState(from)) || {};
+    state.answers = state.answers || {};
+    state.lang = state.lang || detectLanguage(incomingMsg);
 
-    /* ================= SALUDO ================= */
-    if (GREETINGS.includes(lower) && msg.split(" ").length <= 2) {
-      await saveState(from, {
-        service: null,
-        step: 0,
-        answers: {},
-      });
+    const isGreeting =
+      GREETINGS.includes(lowerMsg) && lowerMsg.split(" ").length <= 2;
 
+    const wantsPrice = PRICE_INTENT.some(p => lowerMsg.includes(p));
+
+    /* =============================
+       SALUDO → RESET CONTROLADO
+    ============================= */
+    if (isGreeting) {
+      await saveState(from, { lang: state.lang });
       return reply(
         res,
         twiml,
-        lang === "en"
-          ? "Perfect, tell me a bit about what you need."
-          : "Perfecto 👋 cuéntame qué necesitas."
+        state.lang === "en"
+          ? "Got it 👍 Tell me a bit about what you need."
+          : "Perfecto 👍 Cuéntame un poco de lo que necesitas."
       );
     }
 
-    /* ================= DETECTAR SERVICIO ================= */
+    /* =============================
+       DETECTAR SERVICIO
+    ============================= */
     if (!state.service) {
-      const detected = detectService(msg);
-      if (!detected?.service) {
+      const detected = detectService(incomingMsg);
+
+      if (detected?.service === "lona") {
+        state.service = "lona";
+        state.step = "uso";
+        await saveState(from, state);
+
         return reply(
           res,
           twiml,
-          lang === "en"
-            ? "Got it. Tell me a bit more about your project."
-            : "Entendido 👍 dime un poco más sobre tu proyecto."
+          "Perfecto 👍 ¿La lona es para fachada, evento o promoción temporal?"
         );
       }
 
-      state.service = detected.service;
-      state.step = 0;
-      state.answers = {};
-      await saveState(from, state);
-    }
-
-    /* ================= SOLO LONA ================= */
-    if (state.service !== "lona") {
-      await saveState(from, {});
       return reply(
         res,
         twiml,
-        "Este flujo está optimizado para lonas. Seguimos pronto con los demás 😉"
+        state.lang === "en"
+          ? "Please tell me more about your project."
+          : "Cuéntame un poco más sobre lo que necesitas."
       );
     }
 
-    /* ================= EXTRAER MEDIDAS ================= */
-    const measures = extractMeasures(msg);
-    if (measures) {
-      state.answers.ancho = measures.ancho;
-      state.answers.alto = measures.alto;
-      await saveState(from, state);
-    }
+    /* =============================
+       FLUJO LONA (LINEAL, SIN LOOP)
+    ============================= */
 
-    /* ================= PASO 0: USO ================= */
-    if (state.step === 0) {
-      state.answers.uso = msg;
-      state.step = 1;
+    // 1️⃣ USO
+    if (state.service === "lona" && state.step === "uso") {
+      state.answers.uso = incomingMsg;
+      state.step = "medidas";
       await saveState(from, state);
 
       return reply(
         res,
         twiml,
-        lang === "en"
-          ? "What are the approximate measurements? (example: 5 x 1)"
-          : "Gracias. ¿Cuáles son las medidas aproximadas? (ejemplo: 5 x 1)"
+        "Gracias. ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)"
       );
     }
 
-    /* ================= PASO 1: MEDIDAS ================= */
-    if (state.step === 1) {
-      if (!state.answers.ancho || !state.answers.alto) {
+    // 2️⃣ MEDIDAS
+    if (state.service === "lona" && state.step === "medidas") {
+      const match = incomingMsg.match(
+        /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i
+      );
+
+      if (!match) {
         return reply(
           res,
           twiml,
-          "Necesito las medidas en formato ancho x alto (ejemplo: 5 x 1)."
+          "¿Podrías indicarme las medidas en formato ancho x alto? (ejemplo: 5 x 1)"
         );
       }
 
-      state.step = 2;
+      state.answers.ancho = Number(match[1]);
+      state.answers.alto = Number(match[2]);
+      state.step = "material";
       await saveState(from, state);
-
-      return reply(
-        res,
-        twiml,
-        "Perfecto 👍 ¿Prefieres lona 13 oz (económica) o 18 oz (exterior reforzada)?"
-      );
-    }
-
-    /* ================= PASO 2: MATERIAL ================= */
-    if (state.step === 2) {
-      if (lower.includes("13")) state.answers.material = "13";
-      if (lower.includes("18")) state.answers.material = "18";
-
-      if (!state.answers.material) {
-        return reply(
-          res,
-          twiml,
-          "Indícame si prefieres 13 oz o 18 oz."
-        );
-      }
 
       const area = state.answers.ancho * state.answers.alto;
 
-      const pricePrint =
-        state.answers.material === "13"
-          ? Math.round(area * 180)
-          : Math.round(area * 240);
+      return reply(
+        res,
+        twiml,
+        `Para una lona de *${area} m²* te ofrezco:\n\n` +
+        `🟢 Lona 13 oz (opción económica)\n` +
+        `🔵 Lona 18 oz (más resistente al sol y la lluvia)\n\n` +
+        `👉 ¿Cuál opción prefieres?`
+      );
+    }
 
-      state.answers.precioImpresion = pricePrint;
-      state.step = 3;
+    // 3️⃣ MATERIAL → PRECIO IMPRESIÓN
+    if (state.service === "lona" && state.step === "material") {
+      const material =
+        lowerMsg.includes("18") ? "18 oz" : "13 oz";
+
+      state.answers.material = material;
+      state.step = "diseno";
+      await saveState(from, state);
+
+      const area = state.answers.ancho * state.answers.alto;
+      const precio =
+        material === "18 oz"
+          ? area * 160
+          : area * 120;
+
+      return reply(
+        res,
+        twiml,
+        `🧾 Cotización de impresión:\n\n` +
+        `• Medidas: ${state.answers.ancho} x ${state.answers.alto} m\n` +
+        `• Material: Lona ${material}\n` +
+        `• Precio impresión: *$${precio} MXN*\n\n` +
+        `¿Cuentas con diseño o deseas que lo desarrollemos?`
+      );
+    }
+
+    // 4️⃣ DISEÑO
+    if (state.service === "lona" && state.step === "diseno") {
+      state.answers.diseno = incomingMsg;
+      state.step = "instalacion";
       await saveState(from, state);
 
       return reply(
         res,
         twiml,
-        `🧾 Cotización de impresión:\n` +
-        `📐 ${state.answers.ancho} x ${state.answers.alto} m\n` +
-        `🧵 Lona ${state.answers.material} oz\n` +
-        `💰 Precio impresión: $${pricePrint} MXN\n\n` +
-        `¿Deseas que también diseñemos la lona?`
+        "Perfecto 👍 ¿Deseas agregar instalación?"
       );
     }
 
-    /* ================= PASO 3: DISEÑO ================= */
-    if (state.step === 3) {
-      state.answers.diseno =
-        lower.includes("si") || lower.includes("sí");
-
-      state.step = 4;
-      await saveState(from, state);
-
-      return reply(
-        res,
-        twiml,
-        state.answers.diseno
-          ? "Perfecto 👍 dime el nombre del negocio y qué vende u ofrece."
-          : "Entendido 👍 ¿Deseas agregar instalación?"
-      );
-    }
-
-    /* ================= PASO 4: INFO NEGOCIO ================= */
-    if (state.step === 4 && state.answers.diseno) {
-      state.answers.negocio = msg;
-      state.step = 5;
-      await saveState(from, state);
-
-      return reply(
-        res,
-        twiml,
-        "Excelente 👌 ¿Deseas agregar instalación?"
-      );
-    }
-
-    /* ================= PASO 5: INSTALACIÓN ================= */
-    if (state.step === 5) {
-      state.answers.instalacion =
-        lower.includes("si") || lower.includes("sí");
-
-      if (!state.answers.instalacion) {
-        await saveState(from, {});
-        return reply(
-          res,
-          twiml,
-          "Perfecto 👍 Te preparo la cotización formal de impresión."
-        );
-      }
-
-      state.step = 6;
-      await saveState(from, state);
-
-      return reply(
-        res,
-        twiml,
-        "¿A qué altura aproximada irá instalada la lona?"
-      );
-    }
-
-    /* ================= PASO 6: ALTURA ================= */
-    if (state.step === 6) {
-      state.answers.altura = msg;
-
-      const installPrice = 600; // base ajustable
-      const total =
-        state.answers.precioImpresion + installPrice;
+    // 5️⃣ INSTALACIÓN
+    if (state.service === "lona" && state.step === "instalacion") {
+      state.answers.instalacion = incomingMsg;
 
       await saveState(from, {});
 
       return reply(
         res,
         twiml,
-        `🧾 Cotización final:\n` +
-        `💰 Impresión: $${state.answers.precioImpresion} MXN\n` +
-        `🛠 Instalación: $${installPrice} MXN\n` +
-        `✅ TOTAL: $${total} MXN\n\n` +
-        `¿Deseas que te envíe la cotización formal en PDF?`
+        "Excelente 👍 Con esta información puedo prepararte la cotización formal y tiempos de entrega."
       );
     }
 
-    await saveState(from, {});
-    return reply(res, twiml, "Seguimos 👍");
+    // FALLBACK
+    return reply(
+      res,
+      twiml,
+      "Perfecto 👍 continuamos."
+    );
 
-  } catch (err) {
-    console.error("CHAT ERROR:", err);
-    await saveState(req.body.From, {});
+  } catch (error) {
+    console.error("❌ CHAT ERROR:", error);
     return reply(
       res,
       twiml,
