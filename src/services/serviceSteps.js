@@ -8,10 +8,11 @@ export const serviceSteps = {
       key: "medidas",
       question: `Gracias. ¿Cuáles son las medidas aproximadas de la lona?`
     },
-    {
-      key: "cierre",
-      question: `Excelente 👍 Con esas medidas puedo recomendarte una lona reforzada de 18 oz con alta resistencia al sol y la lluvia.`
-    }
+   {
+  key: "medidas",
+  question: "Perfecto 👍 Tomo nota de las medidas."
+}
+
   ],
 
   toldo: [
