@@ -22,6 +22,7 @@ function reply(res, twiml, text) {
 // =============================
 const GREETING_REGEX = /\b(hola|buenas|hello|hi|hey)\b/i;
 const ENGLISH_REGEX = /\b(hello|hi|please|price|how much|banner|sign)\b/i;
+const UNSURE_REGEX = /\b(no se|no sé|que hacen|qué hacen|que servicios|qué servicios|me orientas|me puedes orientar|no estoy seguro)\b/i;
 const TTL_24H = 24 * 60 * 60 * 1000;
 
 // =============================
@@ -51,29 +52,40 @@ router.post("/", async (req, res) => {
     const isEnglish = ENGLISH_REGEX.test(lowerMsg);
 
     // =============================
-    // IDIOMA (SOLO UNA VEZ)
+    // SALUDO SIEMPRE REINICIA
     // =============================
-    if (!state.language) {
-      state.language = isEnglish ? "en" : "es";
+    if (isGreeting) {
+      state = {
+        language: isEnglish ? "en" : "es",
+        step: 1,
+        answers: {},
+        lastInteraction: Date.now()
+      };
+      await saveState(from, state);
+
+      return reply(
+        res,
+        twiml,
+        state.language === "en"
+          ? "Hello 👋 Welcome to *Limitless Studio*.\n\nWe’ll be happy to help you with your project. Tell me, what do you have in mind?"
+          : "¡Hola! 👋 Bienvenido a *Limitless Studio*.\n\nSerá un gusto ayudarte con tu proyecto.\nCuéntame, ¿qué tienes en mente o qué te gustaría realizar?"
+      );
     }
 
-    const t = (es, en) => (state.language === "en" ? en : es);
-
     // =============================
-    // SALUDO / RESET
+    // APOYO SI EL CLIENTE DUDA
     // =============================
-    if (isGreeting && state.step === 0) {
-      state.step = 1;
+    if (UNSURE_REGEX.test(lowerMsg)) {
       state.lastInteraction = Date.now();
       await saveState(from, state);
 
       return reply(
         res,
         twiml,
-        t(
-          "¡Hola! 👋 Cuéntame qué proyecto tienes en mente.",
-          "Hi 👋 Tell me about the project you have in mind."
-        )
+        "Con gusto 😊\n" +
+        "Trabajamos con diseño gráfico, impresión (lona y vinil), rotulación, " +
+        "toldos para fachada, rótulos luminosos, polarizado, estampados y marketing digital.\n\n" +
+        "Cuéntame cuál te interesa o qué proyecto tienes en mente."
       );
     }
 
@@ -99,10 +111,9 @@ router.post("/", async (req, res) => {
       return reply(
         res,
         twiml,
-        t(
-          "Perfecto 👍 dime un poco más para ayudarte.",
-          "Great 👍 tell me a bit more so I can help you."
-        )
+        state.language === "en"
+          ? "Great 👍 tell me a bit more so I can help you."
+          : "Perfecto 👍 dime un poco más para ayudarte."
       );
     }
 
@@ -120,10 +131,9 @@ router.post("/", async (req, res) => {
         return reply(
           res,
           twiml,
-          t(
-            "Gracias 👍 ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)",
-            "Thanks 👍 What are the approximate measurements? (example: 3 x 1)"
-          )
+          state.language === "en"
+            ? "Thanks 👍 What are the approximate measurements? (example: 3 x 1)"
+            : "Gracias 👍 ¿Cuáles son las medidas aproximadas? (ejemplo: 3 x 1)"
         );
       }
 
@@ -137,10 +147,9 @@ router.post("/", async (req, res) => {
           return reply(
             res,
             twiml,
-            t(
-              "Por favor indícame las medidas en formato ancho x alto (ejemplo: 3 x 1).",
-              "Please provide measurements as width x height (example: 3 x 1)."
-            )
+            state.language === "en"
+              ? "Please provide measurements as width x height (example: 3 x 1)."
+              : "Por favor indícame las medidas en formato ancho x alto (ejemplo: 3 x 1)."
           );
         }
 
@@ -164,10 +173,9 @@ router.post("/", async (req, res) => {
           return reply(
             res,
             twiml,
-            t(
-              `Para una lona de ${area} m² te ofrezco:\n\n🟢 Lona 13 oz (económica)\n🔵 Lona 18 oz (exterior)\n\n¿Cuál prefieres?`,
-              `For a ${area} m² banner I offer:\n\n🟢 13 oz banner (economy)\n🔵 18 oz banner (outdoor)\n\nWhich do you prefer?`
-            )
+            state.language === "en"
+              ? `For a ${area} m² banner I offer:\n\n🟢 13 oz banner (economy)\n🔵 18 oz banner (outdoor)\n\nWhich do you prefer?`
+              : `Para una lona de ${area} m² te ofrezco:\n\n🟢 Lona 13 oz (económica)\n🔵 Lona 18 oz (exterior)\n\n¿Cuál prefieres?`
           );
         }
 
@@ -188,10 +196,9 @@ router.post("/", async (req, res) => {
         return reply(
           res,
           twiml,
-          t(
-            `Cotización:\n\nMedidas: ${ancho} x ${alto} m\nMaterial: Lona ${material} oz\n💰 Precio: $${price} MXN\n\n¿Deseas agregar instalación?`,
-            `Quote:\n\nSize: ${ancho} x ${alto} m\nMaterial: ${material} oz banner\n💰 Price: $${price} MXN\n\nWould you like installation?`
-          )
+          state.language === "en"
+            ? `Quote:\n\nSize: ${ancho} x ${alto} m\nMaterial: ${material} oz banner\n💰 Price: $${price} MXN\n\nWould you like installation?`
+            : `Cotización:\n\nMedidas: ${ancho} x ${alto} m\nMaterial: Lona ${material} oz\n💰 Precio: $${price} MXN\n\n¿Deseas agregar instalación?`
         );
       }
 
@@ -205,10 +212,9 @@ router.post("/", async (req, res) => {
         return reply(
           res,
           twiml,
-          t(
-            "¿Cuentas con diseño o deseas que lo desarrollemos? Dime también el nombre de tu negocio.",
-            "Do you already have a design or would you like us to create it? Please tell me your business name."
-          )
+          state.language === "en"
+            ? "Do you already have a design or would you like us to create it? Please tell me your business name."
+            : "¿Cuentas con diseño o deseas que lo desarrollemos? Dime también el nombre de tu negocio."
         );
       }
 
@@ -218,10 +224,9 @@ router.post("/", async (req, res) => {
         return reply(
           res,
           twiml,
-          t(
-            "Excelente 👍 Con esta información te preparo la cotización formal.",
-            "Perfect 👍 With this information I’ll prepare your formal quote."
-          )
+          state.language === "en"
+            ? "Perfect 👍 With this information I’ll prepare your formal quote."
+            : "Excelente 👍 Con esta información te preparo la cotización formal."
         );
       }
     }
@@ -232,10 +237,9 @@ router.post("/", async (req, res) => {
     return reply(
       res,
       twiml,
-      t(
-        "¿Podrías darme un poco más de detalle o escribir *hola* para comenzar de nuevo?",
-        "Could you give me more details or type *hi* to start again?"
-      )
+      state.language === "en"
+        ? "Could you give me more details or type *hi* to start again?"
+        : "¿Podrías darme un poco más de detalle o escribir *hola* para comenzar de nuevo?"
     );
   } catch (err) {
     console.error("❌ CHAT ERROR:", err);
