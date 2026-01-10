@@ -122,67 +122,65 @@ router.post("/", async (req, res) => {
       );
     }
 
-    // =============================
-    // FLUJO TOLDOS COMPLETO
-    // =============================
-    if (state.service === "toldo") {
+  // =============================
+// FLUJO DEFINITIVO: TOLDOS
+// ESCALA A ASESOR (DISEÑO Y PRODUCCIÓN)
+// =============================
+if (state.service === "toldo") {
 
-      // PASO 1 — TIPO DE TOLDO
-      if (state.step === 1) {
-        state.answers.tipoToldo = incomingMsg;
-        state.step = 2;
-        state.lastInteraction = Date.now();
-        await saveState(from, state);
+  // PASO 1 — TIPO DE TOLDO
+  if (!state.step || state.step === 1) {
+    state.answers.tipoToldo = incomingMsg;
+    state.step = 2;
+    state.lastInteraction = Date.now();
+    await saveState(from, state);
 
-        return reply(
-          res,
-          twiml,
-          "Gracias 👍\n¿Podrías indicarme las medidas aproximadas?\n(ancho y salida desde la pared)\n\nSi no cuentas con ellas, podemos agendar una visita técnica."
-        );
-      }
+    return reply(
+      res,
+      twiml,
+      "Gracias 👍\n\n¿Podrías indicarme las medidas aproximadas?\n(ancho y salida desde la pared)\n\nSi no cuentas con ellas, podemos agendar una visita técnica."
+    );
+  }
 
-      // PASO 2 — PREGUNTA PRECIO (ESCALA)
-      if (PRICE_REGEX.test(lowerMsg)) {
-        await saveState(from, {});
-        return reply(
-          res,
-          twiml,
-          "Excelente pregunta 👍\n\nPara darte un costo específico, un asesor de producción revisará los materiales, estructura y condiciones de instalación.\n\nEn breve uno de nuestros asesores se pondrá en contacto contigo."
-        );
-      }
+  // PASO 2 — ACEPTA VISITA / NO TIENE MEDIDAS
+  if (VISIT_REGEX.test(lowerMsg)) {
+    state.step = 3;
+    state.lastInteraction = Date.now();
+    await saveState(from, state);
 
-      // PASO 3 — ACEPTA VISITA
-      if (VISIT_REGEX.test(lowerMsg)) {
-        state.step = 3;
-        state.lastInteraction = Date.now();
-        await saveState(from, state);
+    return reply(
+      res,
+      twiml,
+      "Perfecto 👍 Para agendar la visita técnica, ¿podrías enviarnos tu ubicación o la dirección del lugar?"
+    );
+  }
 
-        return reply(
-          res,
-          twiml,
-          "Perfecto 👍 Para agendar la visita técnica, ¿podrías enviarnos tu ubicación o la dirección del lugar?"
-        );
-      }
+  // PASO 3 — RECIBE UBICACIÓN
+  if (state.step === 3) {
+    state.answers.ubicacion = incomingMsg;
+    state.lastInteraction = Date.now();
+    await saveState(from, state);
 
-      // PASO 4 — RECIBE UBICACIÓN
-      if (state.step === 3) {
-        state.answers.ubicacion = incomingMsg;
-        await saveState(from, {});
+    await saveState(from, {}); // cierre limpio
 
-        return reply(
-          res,
-          twiml,
-          "Gracias 👍 Ya recibimos la ubicación.\nUn asesor de producción se pondrá en contacto contigo en breve para confirmar la visita técnica."
-        );
-      }
+    return reply(
+      res,
+      twiml,
+      "Gracias 👍 Ya recibimos la ubicación.\n\nUn asesor de *Diseño y Producción* se pondrá en contacto contigo en breve para confirmar la visita técnica y definir los detalles."
+    );
+  }
 
-      // SI MANDA MEDIDAS
-      return reply(
-        res,
-        twiml,
-        "Perfecto 👍 Con esas medidas un asesor de producción revisará materiales y estructura para brindarte una cotización precisa."
-      );
-    }
+  // PASO 4 — SI TIENE MEDIDAS O PIDE PRECIO → ESCALA
+  if (PRICE_REGEX.test(lowerMsg) || state.step === 2) {
+    await saveState(from, {}); // cierre limpio
+
+    return reply(
+      res,
+      twiml,
+      "Perfecto 👍\n\nPara poder brindarte una cotización precisa, es necesario revisar detalles de diseño y producción como materiales, estructura y condiciones de instalación.\n\nUn asesor de *Diseño y Producción* se pondrá en contacto contigo en breve para ayudarte y definir el costo final."
+    );
+  }
+}
 
     // =============================
     // FLUJO LONA (SE MANTIENE)
